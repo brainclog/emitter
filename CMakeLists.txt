@@ -3,7 +3,10 @@ project(emitter CUDA)
 
 set(CMAKE_CUDA_STANDARD 20)
 
-add_executable(emitter main.cu)
+# Specify the include directories
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
+add_executable(emitter main.cu
+)
 set_target_properties(emitter PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON)
