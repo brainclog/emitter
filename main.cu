@@ -1,4 +1,5 @@
 #include <iostream>
+#include <random>
 
 #include "Vec3.h"
 #include "Ray.h"
@@ -6,6 +7,7 @@
 #include "Sphere.h"
 #include "HitableList.h"
 #include "Image.h"
+#include "Camera.h"
 
 Vec3 color(const Ray& r, Hitable* world) {
   HitRecord rec;
@@ -18,23 +20,32 @@ Vec3 color(const Ray& r, Hitable* world) {
   }
 }
 
+class RandomGenerator {
+private:
+  std::default_random_engine engine;
+  std::uniform_real_distribution<double> distribution; // Range [0, 1)
+public:
+  // no seed
+  RandomGenerator() : engine(std::random_device{}()), distribution(0.0, 1.0) {}
+  // with seed
+  RandomGenerator(unsigned int seed) : engine(seed), distribution(0.0, 1.0) {}
+
+  double getDouble() {
+    return distribution(engine);
+  }
+};
+
 int main() {
   int nx = 200;
   int ny = 100;
 
-  // Camera setup
-  Vec3 lower_left_corner(-2.0, -1.0, -1.0);
-  Vec3 horizontal(4.0, 0.0, 0.0);
-  Vec3 vertical(0.0, 2.0, 0.0);
-  Vec3 origin(0.0, 0.0, 0.0);
 
-  // World setup (two spheres)
   Hitable* list[2];
   list[0] = new Sphere(Vec3(0, 0, -1), 0.5);
   list[1] = new Sphere(Vec3(0, -100.5, -1), 100);
   Hitable* world = new HitableList(list, 2);
+  Camera camera;
 
-  // Create an Image object
   Image image(nx, ny);
 
   // Generate the image
@@ -43,8 +54,9 @@ int main() {
       float u = float(i) / float(nx);
       float v = float(j) / float(ny);
 
-      // Ray through pixel (i, j)
-      Ray camera_ray(origin, lower_left_corner + u * horizontal + v * vertical);
+
+//      Ray camera_ray(origin, lower_left_corner + u * horizontal + v * vertical);
+      Ray camera_ray = camera.getRay(u,v);
       Vec3 px_color = color(camera_ray, world);
 
       // Write the pixel color to the image
@@ -52,7 +64,6 @@ int main() {
     }
   }
 
-  // Save the image to a PNG file
   image.save("../output.png");
 
   return 0;
