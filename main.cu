@@ -53,9 +53,10 @@ int main() {
             Vec3 px_color = color(camera_ray, world);
 
             // Scale to 0-255 and store in the image array
-            image[(j * nx + i) * 3 + 0] = static_cast<unsigned char>(255.99f * px_color.x()); // Red
-            image[(j * nx + i) * 3 + 1] = static_cast<unsigned char>(255.99f * px_color.y()); // Green
-            image[(j * nx + i) * 3 + 2] = static_cast<unsigned char>(255.99f * px_color.z()); // Blue
+          image[((ny - 1 - j) * nx + i) * 3 + 0] = static_cast<unsigned char>(255.99f * px_color.x()); // Red
+          image[((ny - 1 - j) * nx + i) * 3 + 1] = static_cast<unsigned char>(255.99f * px_color.y()); // Green
+          image[((ny - 1 - j) * nx + i) * 3 + 2] = static_cast<unsigned char>(255.99f * px_color.z()); // Blue
+
         }
     }
 
