@@ -47,16 +47,18 @@ Vec3 color(const Ray& r, Hitable* world, int depth) {
 
 
 int main() {
-  int nx = 400;
-  int ny = 200;
+  int nx = 200;
+  int ny = 100;
   int ns = 100;
 
-  Hitable* list[4];
+  const int object_N = 5;
+  Hitable* list[object_N];
   list[0] = new Sphere(Vec3(0, 0, -1), 0.5, std::make_shared<lambertian>(Vec3(0.8, 0.2, 0.3)));
   list[1] = new Sphere(Vec3(0, -100.5, -1), 100, std::make_shared<lambertian>(Vec3(0.8, 0.8, 0.1)));
   list[2] = new Sphere(Vec3(1, 0, -1), 0.5, std::make_shared<metal>(Vec3(0.8, 0.6, 0.2), 0.0));
-  list[3] = new Sphere(Vec3(-1, 0, -1), 0.5, std::make_shared<metal>(Vec3(0.8, 0.8, 0.8), 1.0));
-  Hitable* world = new HitableList(list, 4);
+  list[3] = new Sphere(Vec3(-1, 0, -1), 0.5, std::make_shared<dielectric>(1.5));
+  list[4] = new Sphere(Vec3(-1, 0, -1), -0.45, std::make_shared<dielectric>(1.5));
+  Hitable* world = new HitableList(list, object_N);
   Camera camera;
   Image image(nx, ny);
   auto rng = RandomGenerator(1);
@@ -76,7 +78,7 @@ int main() {
       }
       px_color /= float(ns);
 
-      // gamma 2.2
+      // gamma 1.8
       px_color = Vec3(std::pow(px_color.e[0], 1/1.8), std::pow(px_color.e[1], 1/1.8), std::pow(px_color.e[2], 1/1.8));
 
       // write pixel color
