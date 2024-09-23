@@ -116,3 +116,15 @@ inline Vec3 cross(const Vec3& u, const Vec3& v) {
 inline Vec3 unit_vector(const Vec3& v) {
     return v / v.length();
 }
+
+inline Vec3 randomUnitVector(){
+  Vec3 p;
+  do {
+    p = 2.0 * Vec3(drand48(), drand48(), drand48()) - Vec3(1,1,1);
+  } while (p.length_squared() >= 1.0);
+  return p;
+}
+
+inline Vec3 reflect(const Vec3& v, const Vec3& n) {
+  return v - 2*dot(v,n)*n;
+}

@@ -8,17 +8,8 @@
 #include "HitableList.h"
 #include "Image.h"
 #include "Camera.h"
+#include "Material.h"
 
-Vec3 color(const Ray& r, Hitable* world) {
-  HitRecord rec;
-  if (world->hit(r, 0.0, MAXFLOAT, rec)) {
-    return 0.5 * Vec3(rec.normal.x() + 1, rec.normal.y() + 1, rec.normal.z() + 1);
-  } else {
-    Vec3 unit_direction = unit_vector(r.direction());
-    float t = 0.5 * (unit_direction.y() + 1.0);
-    return (1.0 - t) * Vec3(1.0, 1.0, 1.0) + t * Vec3(0.5, 0.7, 1.0);
-  }
-}
 
 class RandomGenerator {
 private:
@@ -35,31 +26,60 @@ public:
   }
 };
 
+
+
+Vec3 color(const Ray& r, Hitable* world, int depth) {
+  HitRecord rec;
+  if (world->hit(r, 0.001, MAXFLOAT, rec)) {
+    Ray scattered;
+    Vec3 attenuation;
+    if(depth<50 && rec.mat_ptr->scatter(r, rec, attenuation, scattered)){
+      return attenuation * color(scattered, world, depth+1);
+    } else{
+      return Vec3(0,0,0);
+    }
+  } else {
+    Vec3 unit_direction = unit_vector(r.direction());
+    float t = 0.5 * (unit_direction.y() + 1.0);
+    return (1.0 - t) * Vec3(1.0, 1.0, 1.0) + t * Vec3(0.5, 0.7, 1.0);
+  }
+};
+
+
 int main() {
-  int nx = 200;
-  int ny = 100;
+  int nx = 400;
+  int ny = 200;
+  int ns = 100;
 
-
-  Hitable* list[2];
-  list[0] = new Sphere(Vec3(0, 0, -1), 0.5);
-  list[1] = new Sphere(Vec3(0, -100.5, -1), 100);
-  Hitable* world = new HitableList(list, 2);
+  Hitable* list[4];
+  list[0] = new Sphere(Vec3(0, 0, -1), 0.5, std::make_shared<lambertian>(Vec3(0.8, 0.2, 0.3)));
+  list[1] = new Sphere(Vec3(0, -100.5, -1), 100, std::make_shared<lambertian>(Vec3(0.8, 0.8, 0.1)));
+  list[2] = new Sphere(Vec3(1, 0, -1), 0.5, std::make_shared<metal>(Vec3(0.8, 0.6, 0.2), 0.0));
+  list[3] = new Sphere(Vec3(-1, 0, -1), 0.5, std::make_shared<metal>(Vec3(0.8, 0.8, 0.8), 1.0));
+  Hitable* world = new HitableList(list, 4);
   Camera camera;
-
   Image image(nx, ny);
+  auto rng = RandomGenerator(1);
+
 
   // Generate the image
   for (int j = ny - 1; j >= 0; j--) {
     for (int i = 0; i < nx; i++) {
-      float u = float(i) / float(nx);
-      float v = float(j) / float(ny);
+      Vec3 px_color = Vec3(0,0,0);
 
+      for(int s = 0; s < ns; s++){
+        float u = float(i + rng.getDouble()) / float(nx);
+        float v = float(j + rng.getDouble()) / float(ny);
+        //      Ray camera_ray(origin, lower_left_corner + u * horizontal + v * vertical);
+        Ray camera_ray = camera.getRay(u,v);
+        px_color += color(camera_ray, world, 0);
+      }
+      px_color /= float(ns);
 
-//      Ray camera_ray(origin, lower_left_corner + u * horizontal + v * vertical);
-      Ray camera_ray = camera.getRay(u,v);
-      Vec3 px_color = color(camera_ray, world);
+      // gamma 2.2
+      px_color = Vec3(std::pow(px_color.e[0], 1/1.8), std::pow(px_color.e[1], 1/1.8), std::pow(px_color.e[2], 1/1.8));
 
-      // Write the pixel color to the image
+      // write pixel color
       image.write_pixel(i, ny - 1 - j, px_color);
     }
   }
