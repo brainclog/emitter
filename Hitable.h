@@ -10,10 +10,10 @@ struct HitRecord{
   float t;
   Vec3 p;
   Vec3 normal;
-  std::shared_ptr<Material> mat_ptr;
+//  *Material mat_ptr;
 };
 
 class Hitable {
 public:
-  virtual bool hit(const Ray& r, float t_min, float t_max, HitRecord& rec) const = 0;
+  __device__ virtual bool hit(const Ray& r, float t_min, float t_max, HitRecord& rec) const = 0;
 };

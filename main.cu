@@ -1,6 +1,8 @@
 #include <iostream>
 #include <random>
 #include <chrono>
+#include <cmath>
+#include <cfloat>
 
 #include "Vec3.h"
 #include "Ray.h"
@@ -10,6 +12,8 @@
 #include "Image.h"
 #include "Camera.h"
 #include "Material.h"
+
+
 
 // limited version of checkCudaErrors from helper_cuda.h in CUDA examples
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
@@ -23,6 +27,7 @@ void check_cuda(cudaError_t result, char const *const func, const char *const fi
     exit(99);
   }
 }
+
 
 class RandomGenerator {
 private:
@@ -44,32 +49,22 @@ public:
 
 // final color function from cpu side
 
-//Vec3 color(const Ray& r, Hitable* world, int depth) {
-//  HitRecord rec;
-//  if (world->hit(r, 0.001, MAXFLOAT, rec)) {
-//    Ray scattered;
-//    Vec3 attenuation;
-//    if(depth<50 && rec.mat_ptr->scatter(r, rec, attenuation, scattered)){
-//      return attenuation * color(scattered, world, depth+1);
-//    } else{
-//      return Vec3(0,0,0);
-//    }
-//  } else {
-//    Vec3 unit_direction = unit_vector(r.direction());
-//    float t = 0.5 * (unit_direction.y() + 1.0);
-//    return (1.0 - t) * Vec3(1.0, 1.0, 1.0) + t * Vec3(0.5, 0.7, 1.0);
-//  }
-//};
 
-//color function from chapter 3
-__device__ Vec3 color(const Ray& r) {
-  Vec3 unit_direction = unit_vector(r.direction());
-  float t = 0.5f*(unit_direction.y() + 1.0f);
-  return (1.0f-t)*Vec3(1.0f, 1.0f, 1.0f) + t*Vec3(0.5f, 0.7f, 1.0f);
+
+__device__ Vec3 color(const Ray& r, Hitable **world) {
+  HitRecord rec;
+  if ((*world)->hit(r, 0.0, FLT_MAX, rec)) {
+    return 0.5f*Vec3(rec.normal.x()+1.0f, rec.normal.y()+1.0f, rec.normal.z()+1.0f);
+  }
+  else {
+    Vec3 unit_direction = unit_vector(r.direction());
+    float t = 0.5f * (unit_direction.y() + 1.0f);
+    return (1.0f-t) * Vec3(1.0, 1.0, 1.0) + t * Vec3(0.5, 0.7, 1.0);
+  }
 }
 
-
-__global__ void render(Vec3 *fb, int max_x, int max_y, Vec3 lower_left_corner, Vec3 horizontal, Vec3 vertical, Vec3 origin) {
+__global__ void render(Vec3 *fb, int max_x, int max_y,Vec3 lower_left_corner, Vec3 horizontal, Vec3 vertical, Vec3 origin, Hitable **world)
+{
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
   if((i >= max_x) || (j >= max_y)) return;
@@ -77,7 +72,21 @@ __global__ void render(Vec3 *fb, int max_x, int max_y, Vec3 lower_left_corner, V
   float u = float(i) / float(max_x);
   float v = float(j) / float(max_y);
   Ray r(origin, lower_left_corner + u*horizontal + v*vertical);
-  fb[pixel_index] = color(r);
+  fb[pixel_index] = color(r, world);
+}
+
+__global__ void create_world(Hitable **d_list, Hitable **d_world) {
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    *(d_list)   = new Sphere(Vec3(0,0,-1), 0.5);
+    *(d_list+1) = new Sphere(Vec3(0,-100.5,-1), 100);
+    *d_world    = new HitableList(d_list,2);
+  }
+}
+
+__global__ void free_world(Hitable **d_list, Hitable **d_world) {
+  delete *(d_list);
+  delete *(d_list+1);
+  delete *d_world;
 }
 
 
@@ -91,25 +100,33 @@ int main() {
   int num_pixels = nx*ny;
   size_t fb_size = 3 * num_pixels * sizeof(float);
 
+  Hitable **d_list;
+  checkCudaErrors(   cudaMalloc(  (void **)&d_list  , 2*sizeof(Hitable*)));
+  Hitable **d_world;
+  checkCudaErrors(cudaMalloc((void **)&d_world, sizeof(Hitable *)));
+  create_world<<<1,1>>>(d_list,d_world);
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaDeviceSynchronize());
+
   // allocate FB
   Vec3 *fb;
-  checkCudaErrors(cudaMallocManaged((void **)&fb, fb_size));
+  checkCudaErrors(    cudaMallocManaged((void **)&fb, fb_size)   );
   auto start = std::chrono::high_resolution_clock::now();
 
-  dim3 blocks(nx/tx+1,ny/ty+1);
+  dim3 blocks((nx + tx - 1) / tx, (ny + ty - 1) / ty);
   dim3 threads(tx,ty);
   render<<<blocks, threads>>>(fb, nx, ny,
                               Vec3(-2.0, -1.0, -1.0),
                               Vec3(4.0, 0.0, 0.0),
                               Vec3(0.0, 2.0, 0.0),
-                              Vec3(0.0, 0.0, 0.0));
+                              Vec3(0.0, 0.0, 0.0), d_world);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
   auto stop = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-
-// Print the duration (optional)
   std::cout << "Time taken: " << duration.count() << " microseconds" << std::endl;
+
+
 
 //  const int object_N = 5;
 //  Hitable* list[object_N];
@@ -153,6 +170,13 @@ int main() {
   }
 
   image.save("../output.png");
+
+  checkCudaErrors(cudaDeviceSynchronize());
+  free_world<<<1,1>>>(d_list,d_world);
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaFree(d_list));
+  checkCudaErrors(cudaFree(d_world));
+  checkCudaErrors(cudaFree(fb));
 
   return 0;
 }
