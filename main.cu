@@ -51,8 +51,6 @@ int main() {
   const int ny = 400;
   const int ns = 100;
 
-//  float R = cos(M_PI/4);
-
   const int object_N = 5;
   Hitable* list[object_N];
   list[0] = new Sphere(Vec3(0, 0, -1), 0.5, std::make_shared<lambertian>(Vec3(0.8, 0.2, 0.3)));
@@ -60,13 +58,15 @@ int main() {
   list[2] = new Sphere(Vec3(1, 0, -1), 0.5, std::make_shared<metal>(Vec3(0.8, 0.6, 0.2), 0.0));
   list[3] = new Sphere(Vec3(-1, 0, -1), 0.5, std::make_shared<dielectric>(1.5));
   list[4] = new Sphere(Vec3(-1, 0, -1), -0.45, std::make_shared<dielectric>(1.5));
-//    list[0] = new Sphere(Vec3(-R, 0, -1), R, std::make_shared<lambertian>(Vec3(0.8, 0.2, 0.3)));
-//    list[1] = new Sphere(Vec3(R, 0, -1), R, std::make_shared<lambertian>(Vec3(0.8, 0.8, 0.1)));
-
   Hitable* world = new HitableList(list, object_N);
-  Camera camera = Camera(Vec3(-2,2,1), Vec3(0,0,-1), Vec3(0,1,0) ,60, float(nx)/float(ny));
   Image image(nx, ny);
   auto rng = RandomGenerator(1);
+
+  Vec3 lookfrom(3,3,2);
+  Vec3 lookat(0,0,-1);
+  float dist_to_focus = (lookfrom-lookat).length();
+  float aperture = 2.0;
+  Camera camera = Camera(lookfrom, lookat, Vec3(0,1,0) ,20, float(nx)/float(ny), aperture, dist_to_focus);
 
 
   // Generate the image
