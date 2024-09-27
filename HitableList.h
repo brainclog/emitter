@@ -9,6 +9,7 @@ public:
   __device__ virtual bool hit(const Ray& r, float tmin, float tmax, HitRecord& rec) const;
   Hitable ** list;
   int list_size;
+
 };
 
 __device__ bool HitableList::hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const {

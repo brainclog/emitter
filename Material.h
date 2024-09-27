@@ -79,7 +79,7 @@ __device__ float schlick(float cosine, float ref_idx){
 
 class dielectric : public Material {
 public:
-  dielectric (float ri) : ref_idx(ri) {}
+  __device__ dielectric (float ri) : ref_idx(ri) {}
   __device__ bool scatter(const Ray& r_in, const HitRecord& rec, Vec3& attenuation, Ray& scattered, curandState *local_rand_state)
   const override {
     Vec3 outward_normal;

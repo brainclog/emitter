@@ -30,38 +30,31 @@ void check_cuda(cudaError_t result, char const *const func, const char *const fi
 }
 
 
-class RandomGenerator {
-private:
-  std::default_random_engine engine;
-  std::uniform_real_distribution<double> distribution; // Range [0, 1)
-public:
-  // no seed
-  RandomGenerator() : engine(std::random_device{}()), distribution(0.0, 1.0) {}
-  // with seed
-  RandomGenerator(unsigned int seed) : engine(seed), distribution(0.0, 1.0) {}
-
-  double getDouble() {
-    return distribution(engine);
+// final color function
+__device__ Vec3 color(const Ray& r, Hitable **world, curandState *local_rand_state) {
+  Ray cur_ray = r;
+  Vec3 cur_attenuation = Vec3(1.0,1.0,1.0);
+  for(int i = 0; i < 50; i++) {
+    HitRecord rec;
+    if ((*world)->hit(cur_ray, 0.001f, FLT_MAX, rec)) {
+      Ray scattered;
+      Vec3 attenuation;
+      if(rec.mat_ptr->scatter(cur_ray, rec, attenuation, scattered, local_rand_state)) {
+        cur_attenuation *= attenuation;
+        cur_ray = scattered;
+      }
+      else {
+        return {0.0,0.0,0.0};
+      }
+    }
+    else {
+      Vec3 unit_direction = unit_vector(cur_ray.direction());
+      float t = 0.5f*(unit_direction.y() + 1.0f);
+      Vec3 c = (1.0f-t)*Vec3(1.0, 1.0, 1.0) + t*Vec3(0.5, 0.7, 1.0);
+      return cur_attenuation * c;
+    }
   }
-};
-
-
-
-
-// final color function from cpu side
-
-
-
-__device__ Vec3 color(const Ray& r, Hitable **world) {
-  HitRecord rec;
-  if ((*world)->hit(r, 0.001, FLT_MAX, rec)) {
-    return 0.5f*Vec3(rec.normal.x()+1.0f, rec.normal.y()+1.0f, rec.normal.z()+1.0f);
-  }
-  else {
-    Vec3 unit_direction = unit_vector(r.direction());
-    float t = 0.5f * (unit_direction.y() + 1.0f);
-    return (1.0f-t) * Vec3(1.0, 1.0, 1.0) + t * Vec3(0.5, 0.7, 1.0);
-  }
+  return {0.0,0.0,0.0}; // exceeded recursion
 }
 
 __global__ void render_init(int nx, int ny, curandState *rand_state, unsigned long long SEED) {
@@ -69,49 +62,87 @@ __global__ void render_init(int nx, int ny, curandState *rand_state, unsigned lo
   int j = threadIdx.y + blockIdx.y * blockDim.y;
   if((i >= nx) || (j >= ny)) return;
   int pixel_index = j*nx + i;
-  //Each thread gets same seed, a different sequence number, no offset
   curand_init(SEED, pixel_index, 0, &rand_state[pixel_index]);
 }
 
-__global__ void render(Vec3 *fb, int max_x, int max_y,
-                       Vec3 lower_left_corner,
-                       Vec3 horizontal,
-                       Vec3 vertical,
-                       Vec3 origin, Hitable **world, curandState *rand_state){
+__global__ void render(Vec3 *fb, int max_x, int max_y, int ns,
+                       Camera ** cam, Hitable **world, curandState *rand_state){
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
   if((i >= max_x) || (j >= max_y)) return;
   int pixel_index = j*max_x + i;
   curandState local_rand_state = rand_state[pixel_index];
-  Vec3 col(0,0,0);
-  float u = float(i) / float(max_x);
-  float v = float(j) / float(max_y);
-  Ray r(origin, lower_left_corner + u*horizontal + v*vertical);
-  fb[pixel_index] = color(r, world);
+  Vec3 px_color(0,0,0);
+  for(int s=0; s < ns; s++) {
+    float u = float(i + curand_uniform(&local_rand_state)) / float(max_x);
+    float v = float(j + curand_uniform(&local_rand_state)) / float(max_y);
+    Ray r = (*cam)->getRay(u, v, &local_rand_state);
+    px_color += color(r, world, &local_rand_state);
+  }
+  rand_state[pixel_index] = local_rand_state;
+  px_color /= float(ns);
+  px_color[0] = sqrt(px_color[0]);
+  px_color[1] = sqrt(px_color[1]);
+  px_color[2] = sqrt(px_color[2]);
+  fb[pixel_index] = px_color;
 }
 
-__global__ void create_world(Hitable **d_list, Hitable **d_world) {
-
-  //  const int object_N = 5;
-//  Hitable* list[object_N];
-//  list[0] = new Sphere(Vec3(0, 0, -1), 0.5, std::make_shared<lambertian>(Vec3(0.8, 0.2, 0.3)));
-//  list[1] = new Sphere(Vec3(0, -100.5, -1), 100, std::make_shared<lambertian>(Vec3(0.8, 0.8, 0.1)));
-//  list[2] = new Sphere(Vec3(1, 0, -1), 0.5, std::make_shared<metal>(Vec3(0.8, 0.6, 0.2), 0.0));
-//  list[3] = new Sphere(Vec3(-1, 0, -1), 0.5, std::make_shared<dielectric>(1.5));
-//  list[4] = new Sphere(Vec3(-1, 0, -1), -0.45, std::make_shared<dielectric>(1.5));
-//  Hitable* world = new HitableList(list, object_N);
+__global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny) {
 
   if (threadIdx.x == 0 && blockIdx.x == 0) {
-    *(d_list)   = new Sphere(Vec3(0,0,-1), 0.5);
-    *(d_list+1) = new Sphere(Vec3(0,-100.5,-1), 100);
-    *d_world    = new HitableList(d_list,2);
+    *(d_list) = new Sphere(Vec3(0, 0, -1), 0.5, new lambertian(Vec3(0.8, 0.2, 0.3)));
+    *(d_list+1) = new Sphere(Vec3(0, -100.5, -1), 100, new lambertian(Vec3(0.8, 0.8, 0.1)));
+    *(d_list+2) = new Sphere(Vec3(1, 0, -1), 0.5, new metal(Vec3(0.8, 0.6, 0.2), 0.0));
+    *(d_list+3) = new Sphere(Vec3(-1, 0, -1), 0.5, new dielectric(1.5));
+    *(d_list+4) = new Sphere(Vec3(-1, 0, -1), -0.45, new dielectric(1.5));
+    *d_world    = new HitableList(d_list,5);
+    Vec3 lookfrom(3,3,2);
+    Vec3 lookat(0,0,-1);
+    float dist_to_focus = (lookfrom-lookat).length();
+    float aperture = 2.0;
+    *d_camera   = new Camera(lookfrom,
+                             lookat,
+                             Vec3(0,1,0),
+                             20.0,
+                             float(nx)/float(ny),
+                             aperture,
+                             dist_to_focus);
   }
 }
 
-__global__ void free_world(Hitable **d_list, Hitable **d_world) {
-  delete *(d_list);
-  delete *(d_list+1);
-  delete *d_world;
+__global__ void free_world(Hitable **d_list, Hitable **d_world, Camera **d_camera) {
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    // Step 1: Free materials
+    for(int i=0; i < 5; i++) {
+      if (d_list[i] != nullptr) {
+        Material* mat = ((Sphere*)d_list[i])->mat_ptr;
+        if (mat != nullptr) {
+          delete mat;
+          ((Sphere*)d_list[i])->mat_ptr = nullptr;
+        }
+      }
+    }
+
+    // Step 2: Free Hitables
+    for(int i=0; i < 5; i++) {
+      if (d_list[i] != nullptr) {
+        delete d_list[i];
+        d_list[i] = nullptr;
+      }
+    }
+
+    // Step 3: Free HitableList
+    if (*d_world != nullptr) {
+      delete *d_world;
+      *d_world = nullptr;
+    }
+
+    // Step 4: Free Camera
+    if (*d_camera != nullptr) {
+      delete *d_camera;
+      *d_camera = nullptr;
+    }
+  }
 }
 
 
@@ -157,20 +188,8 @@ int main() {
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
-  //  Vec3 lookfrom(3,3,2);
-  //  Vec3 lookat(0,0,-1);
-  //  float dist_to_focus = (lookfrom-lookat).length();
-  //  float aperture = 2.0;
-  //  Camera camera = Camera(lookfrom, lookat, Vec3(0,1,0) ,20, float(nx)/float(ny), aperture, dist_to_focus);
-
-
-
   // main render function
-  render<<<blocks, threads>>>(fb, nx, ny,
-                              Vec3(-2.0, -1.0, -1.0),
-                              Vec3(4.0, 0.0, 0.0),
-                              Vec3(0.0, 2.0, 0.0),
-                              Vec3(0.0, 0.0, 0.0), d_world);
+  render<<<blocks, threads>>>(fb, nx, ny, ns, d_camera, d_world, d_rand_state);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
   auto stop = std::chrono::high_resolution_clock::now();
@@ -179,40 +198,58 @@ int main() {
 
   // make image to write to
   Image image(nx, ny);
-
-
-
   // Generate the image
   for (int j = ny - 1; j >= 0; j--) {
     for (int i = 0; i < nx; i++) {
-//      Vec3 px_color = fb[j*nx + i];
       image.write_pixel(i, ny - 1 - j, fb[j*nx+i]);
-//
-//      for(int s = 0; s < ns; s++){
-//        float u = float(i + rng.getDouble()) / float(nx);
-//        float v = float(j + rng.getDouble()) / float(ny);
-//        //      Ray camera_ray(origin, lower_left_corner + u * horizontal + v * vertical);
-//        Ray camera_ray = camera.getRay(u,v);
-//        px_color += color(camera_ray, world, 0);
-//      }
-//      px_color /= float(ns);
-//
-//      // gamma 1.8
-//      px_color = Vec3(std::pow(px_color.e[0], 1/1.8), std::pow(px_color.e[1], 1/1.8), std::pow(px_color.e[2], 1/1.8));
-//
-//      // write pixel color
-
     }
   }
 
   image.save("../output.png");
 
+// Staged cleanup
   checkCudaErrors(cudaDeviceSynchronize());
-  free_world<<<1,1>>>(d_list,d_world);
+
+  // Stage 1: Free materials
+  free_world<<<1,1>>>(d_list, nullptr, nullptr);
   checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaFree(d_list));
+  checkCudaErrors(cudaDeviceSynchronize());
+  std::cout << "Stage 1 complete" << std::endl;
+
+  // Stage 2: Free Hitables
+  free_world<<<1,1>>>(d_list, nullptr, nullptr);
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaDeviceSynchronize());
+  std::cout << "Stage 2 complete" << std::endl;
+
+  // Stage 3: Free HitableList
+  free_world<<<1,1>>>(nullptr, d_world, nullptr);
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaDeviceSynchronize());
+  std::cout << "Stage 3 complete" << std::endl;
+
+  // Stage 4: Free Camera
+  free_world<<<1,1>>>(nullptr, nullptr, d_camera);
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaDeviceSynchronize());
+  std::cout << "Stage 4 complete" << std::endl;
+
+  // Now free the device pointers
+  checkCudaErrors(cudaFree(d_camera));
   checkCudaErrors(cudaFree(d_world));
+  checkCudaErrors(cudaFree(d_list));
+  checkCudaErrors(cudaFree(d_rand_state));
   checkCudaErrors(cudaFree(fb));
+
+  cudaDeviceReset();
+
+  checkCudaErrors(cudaFree(d_camera));
+  checkCudaErrors(cudaFree(d_world));
+  checkCudaErrors(cudaFree(d_list));
+  checkCudaErrors(cudaFree(d_rand_state));
+  checkCudaErrors(cudaFree(fb));
+
+  cudaDeviceReset();
 
   return 0;
 }

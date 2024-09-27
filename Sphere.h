@@ -8,18 +8,18 @@ class Material;
 class Sphere: public Hitable {
 public:
   __device__ Sphere() {}
-  __device__ Sphere(Vec3 cen, float r)
-          : center(cen), radius(r) {}
+  __device__ Sphere(Vec3 cen, float r, Material *mat)
+          : center(cen), radius(r), mat_ptr(mat) {}
   __device__ virtual bool hit(const Ray&r, float tmin, float tmax, HitRecord& rec) const;
 
   Vec3 center;
   float radius;
-//  std::shared_ptr<Material> material;
+  Material *mat_ptr;
 };
 
 __device__ bool Sphere::hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const {
   Vec3 oc = r.origin() - center;
-//  rec.mat_ptr = material;
+  rec.mat_ptr = mat_ptr;
   float a = dot(r.direction(), r.direction());
   float b = dot(oc, r.direction());
   float c = dot(oc, oc) - radius * radius;
