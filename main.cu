@@ -111,38 +111,14 @@ __global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_cam
 }
 
 __global__ void free_world(Hitable **d_list, Hitable **d_world, Camera **d_camera) {
-  if (threadIdx.x == 0 && blockIdx.x == 0) {
-    // Step 1: Free materials
-    for(int i=0; i < 5; i++) {
-      if (d_list[i] != nullptr) {
-        Material* mat = ((Sphere*)d_list[i])->mat_ptr;
-        if (mat != nullptr) {
-          delete mat;
-          ((Sphere*)d_list[i])->mat_ptr = nullptr;
-        }
-      }
-    }
-
-    // Step 2: Free Hitables
-    for(int i=0; i < 5; i++) {
-      if (d_list[i] != nullptr) {
-        delete d_list[i];
-        d_list[i] = nullptr;
-      }
-    }
-
-    // Step 3: Free HitableList
-    if (*d_world != nullptr) {
-      delete *d_world;
-      *d_world = nullptr;
-    }
-
-    // Step 4: Free Camera
-    if (*d_camera != nullptr) {
-      delete *d_camera;
-      *d_camera = nullptr;
-    }
+  for(int i=0; i < 5; i++) {
+    delete ((Sphere*)d_list[i])->mat_ptr;
+    delete d_list[i];
   }
+
+  delete *d_world;
+  delete *d_camera;
+
 }
 
 
@@ -207,42 +183,9 @@ int main() {
 
   image.save("../output.png");
 
-// Staged cleanup
   checkCudaErrors(cudaDeviceSynchronize());
-
-  // Stage 1: Free materials
-  free_world<<<1,1>>>(d_list, nullptr, nullptr);
+  free_world<<<1,1>>>(d_list,d_world, d_camera);
   checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaDeviceSynchronize());
-  std::cout << "Stage 1 complete" << std::endl;
-
-  // Stage 2: Free Hitables
-  free_world<<<1,1>>>(d_list, nullptr, nullptr);
-  checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaDeviceSynchronize());
-  std::cout << "Stage 2 complete" << std::endl;
-
-  // Stage 3: Free HitableList
-  free_world<<<1,1>>>(nullptr, d_world, nullptr);
-  checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaDeviceSynchronize());
-  std::cout << "Stage 3 complete" << std::endl;
-
-  // Stage 4: Free Camera
-  free_world<<<1,1>>>(nullptr, nullptr, d_camera);
-  checkCudaErrors(cudaGetLastError());
-  checkCudaErrors(cudaDeviceSynchronize());
-  std::cout << "Stage 4 complete" << std::endl;
-
-  // Now free the device pointers
-  checkCudaErrors(cudaFree(d_camera));
-  checkCudaErrors(cudaFree(d_world));
-  checkCudaErrors(cudaFree(d_list));
-  checkCudaErrors(cudaFree(d_rand_state));
-  checkCudaErrors(cudaFree(fb));
-
-  cudaDeviceReset();
-
   checkCudaErrors(cudaFree(d_camera));
   checkCudaErrors(cudaFree(d_world));
   checkCudaErrors(cudaFree(d_list));
