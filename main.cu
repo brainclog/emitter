@@ -146,10 +146,6 @@ int main() {
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
-//  free_world<<<1,1>>>(d_list,d_world, d_camera);
-//  checkCudaErrors(cudaGetLastError());
-//  checkCudaErrors(cudaDeviceSynchronize());
-
   // allocate FB
   Vec3 *fb;
   checkCudaErrors(cudaMallocManaged((void **)&fb, fb_size)   );
