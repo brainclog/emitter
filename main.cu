@@ -87,7 +87,7 @@ __global__ void render(Vec3 *fb, int max_x, int max_y, int ns,
   fb[pixel_index] = px_color;
 }
 
-__global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny) {
+__global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N) {
 
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     *(d_list) = new Sphere(Vec3(0, 0, -1), 0.5, new lambertian(Vec3(0.8, 0.2, 0.3)));
@@ -95,7 +95,7 @@ __global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_cam
     *(d_list+2) = new Sphere(Vec3(1, 0, -1), 0.5, new metal(Vec3(0.8, 0.6, 0.2), 0.0));
     *(d_list+3) = new Sphere(Vec3(-1, 0, -1), 0.5, new dielectric(1.5));
     *(d_list+4) = new Sphere(Vec3(-1, 0, -1), -0.45, new dielectric(1.5));
-    *d_world    = new HitableList(d_list,5);
+    *d_world    = new HitableList(d_list, object_N);
     Vec3 lookfrom(3,3,2);
     Vec3 lookat(0,0,-1);
     float dist_to_focus = (lookfrom-lookat).length();
@@ -112,7 +112,7 @@ __global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_cam
 
 __global__ void free_world(Hitable **d_list, Hitable **d_world, Camera **d_camera) {
   for(int i=0; i < 5; i++) {
-    delete ((Sphere*)d_list[i])->mat_ptr;
+    delete ((Sphere*)d_list[i])->mat_ptr; // this line makes the code crash ! ! ! ! ! ! ! !
     delete d_list[i];
   }
 
@@ -133,17 +133,22 @@ int main() {
   int num_pixels = nx*ny;
   size_t fb_size = 3 * num_pixels * sizeof(float);
 
+  const int object_N = 5;
+
   Hitable **d_list;
-  checkCudaErrors(   cudaMalloc(  (void **)&d_list  , 2*sizeof(Hitable *)));
+  checkCudaErrors(   cudaMalloc(  (void **)&d_list  , object_N*sizeof(Hitable *)));
   Hitable **d_world;
   checkCudaErrors(cudaMalloc((void **)&d_world, sizeof(Hitable *)));
   Camera **d_camera;
   checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(Camera *)));
 
-  create_world<<<1,1>>>(d_list,d_world, d_camera, nx, ny);
+  create_world<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
+//  free_world<<<1,1>>>(d_list,d_world, d_camera);
+//  checkCudaErrors(cudaGetLastError());
+//  checkCudaErrors(cudaDeviceSynchronize());
 
   // allocate FB
   Vec3 *fb;
@@ -153,7 +158,6 @@ int main() {
   curandState *d_rand_state;
   checkCudaErrors(cudaMalloc((void **)&d_rand_state, num_pixels*sizeof(curandState)));
 
-  auto start = std::chrono::high_resolution_clock::now();
 
 
   dim3 blocks((nx + tx - 1) / tx, (ny + ty - 1) / ty);
@@ -163,7 +167,7 @@ int main() {
   render_init<<<blocks, threads>>>(nx, ny, d_rand_state, rSEED);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
-
+  auto start = std::chrono::high_resolution_clock::now();
   // main render function
   render<<<blocks, threads>>>(fb, nx, ny, ns, d_camera, d_world, d_rand_state);
   checkCudaErrors(cudaGetLastError());

@@ -165,7 +165,7 @@ __host__ __device__ inline Vec3 unit_vector(Vec3 v) {
 //  return p;
 //}
 
-__host__ __device__ inline Vec3 reflect(const Vec3& v, const Vec3& n) {
-  return v - 2*dot(v,n)*n;
-}
+//__host__ __device__ inline Vec3 reflect(const Vec3& v, const Vec3& n) {
+//  return v - 2*dot(v,n)*n;
+//}
 

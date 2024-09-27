@@ -11,19 +11,15 @@ __device__ Vec3 randomUnitVector(curandState *local_rand_state){
   return p;
 }
 
-class Material {
+__device__ Vec3 reflect(const Vec3& v, const Vec3& n) {
+  return v - 2.0f*dot(v,n)*n;
+}
+
+class Material  {
 public:
-  __device__ virtual ~Material() = default;
-
-  __device__ virtual bool scatter(
-          const Ray& r_in, const HitRecord& rec, Vec3& attenuation, Ray& scattered, curandState *local_rand_state
-  ) const {
-    return false;
-  }
-
-
-
+  __device__ virtual bool scatter(const Ray& r_in, const HitRecord& rec, Vec3& attenuation, Ray& scattered, curandState *local_rand_state) const = 0;
 };
+
 class lambertian : public Material {
 public:
   __device__ explicit lambertian(const Vec3& albedo) : albedo(albedo) {}
