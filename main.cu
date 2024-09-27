@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <cfloat>
+#include <curand_kernel.h>
 
 #include "Vec3.h"
 #include "Ray.h"
@@ -53,7 +54,7 @@ public:
 
 __device__ Vec3 color(const Ray& r, Hitable **world) {
   HitRecord rec;
-  if ((*world)->hit(r, 0.0, FLT_MAX, rec)) {
+  if ((*world)->hit(r, 0.001, FLT_MAX, rec)) {
     return 0.5f*Vec3(rec.normal.x()+1.0f, rec.normal.y()+1.0f, rec.normal.z()+1.0f);
   }
   else {
@@ -63,12 +64,26 @@ __device__ Vec3 color(const Ray& r, Hitable **world) {
   }
 }
 
-__global__ void render(Vec3 *fb, int max_x, int max_y,Vec3 lower_left_corner, Vec3 horizontal, Vec3 vertical, Vec3 origin, Hitable **world)
-{
+__global__ void render_init(int nx, int ny, curandState *rand_state, unsigned long long SEED) {
+  int i = threadIdx.x + blockIdx.x * blockDim.x;
+  int j = threadIdx.y + blockIdx.y * blockDim.y;
+  if((i >= nx) || (j >= ny)) return;
+  int pixel_index = j*nx + i;
+  //Each thread gets same seed, a different sequence number, no offset
+  curand_init(SEED, pixel_index, 0, &rand_state[pixel_index]);
+}
+
+__global__ void render(Vec3 *fb, int max_x, int max_y,
+                       Vec3 lower_left_corner,
+                       Vec3 horizontal,
+                       Vec3 vertical,
+                       Vec3 origin, Hitable **world, curandState *rand_state){
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
   if((i >= max_x) || (j >= max_y)) return;
   int pixel_index = j*max_x + i;
+  curandState local_rand_state = rand_state[pixel_index];
+  Vec3 col(0,0,0);
   float u = float(i) / float(max_x);
   float v = float(j) / float(max_y);
   Ray r(origin, lower_left_corner + u*horizontal + v*vertical);
@@ -76,6 +91,16 @@ __global__ void render(Vec3 *fb, int max_x, int max_y,Vec3 lower_left_corner, Ve
 }
 
 __global__ void create_world(Hitable **d_list, Hitable **d_world) {
+
+  //  const int object_N = 5;
+//  Hitable* list[object_N];
+//  list[0] = new Sphere(Vec3(0, 0, -1), 0.5, std::make_shared<lambertian>(Vec3(0.8, 0.2, 0.3)));
+//  list[1] = new Sphere(Vec3(0, -100.5, -1), 100, std::make_shared<lambertian>(Vec3(0.8, 0.8, 0.1)));
+//  list[2] = new Sphere(Vec3(1, 0, -1), 0.5, std::make_shared<metal>(Vec3(0.8, 0.6, 0.2), 0.0));
+//  list[3] = new Sphere(Vec3(-1, 0, -1), 0.5, std::make_shared<dielectric>(1.5));
+//  list[4] = new Sphere(Vec3(-1, 0, -1), -0.45, std::make_shared<dielectric>(1.5));
+//  Hitable* world = new HitableList(list, object_N);
+
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     *(d_list)   = new Sphere(Vec3(0,0,-1), 0.5);
     *(d_list+1) = new Sphere(Vec3(0,-100.5,-1), 100);
@@ -96,25 +121,51 @@ int main() {
   const int ns = 100;
   int tx = 8;
   int ty = 8;
+  const int rSEED = 1;
 
   int num_pixels = nx*ny;
   size_t fb_size = 3 * num_pixels * sizeof(float);
 
   Hitable **d_list;
-  checkCudaErrors(   cudaMalloc(  (void **)&d_list  , 2*sizeof(Hitable*)));
+  checkCudaErrors(   cudaMalloc(  (void **)&d_list  , 2*sizeof(Hitable *)));
   Hitable **d_world;
   checkCudaErrors(cudaMalloc((void **)&d_world, sizeof(Hitable *)));
-  create_world<<<1,1>>>(d_list,d_world);
+  Camera **d_camera;
+  checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(Camera *)));
+
+  create_world<<<1,1>>>(d_list,d_world, d_camera, nx, ny);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
+
   // allocate FB
   Vec3 *fb;
-  checkCudaErrors(    cudaMallocManaged((void **)&fb, fb_size)   );
+  checkCudaErrors(cudaMallocManaged((void **)&fb, fb_size)   );
+
+  // allocate a cuRAND d_rand_state object for every pixel
+  curandState *d_rand_state;
+  checkCudaErrors(cudaMalloc((void **)&d_rand_state, num_pixels*sizeof(curandState)));
+
   auto start = std::chrono::high_resolution_clock::now();
+
 
   dim3 blocks((nx + tx - 1) / tx, (ny + ty - 1) / ty);
   dim3 threads(tx,ty);
+
+  //initialize RNG
+  render_init<<<blocks, threads>>>(nx, ny, d_rand_state, rSEED);
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaDeviceSynchronize());
+
+  //  Vec3 lookfrom(3,3,2);
+  //  Vec3 lookat(0,0,-1);
+  //  float dist_to_focus = (lookfrom-lookat).length();
+  //  float aperture = 2.0;
+  //  Camera camera = Camera(lookfrom, lookat, Vec3(0,1,0) ,20, float(nx)/float(ny), aperture, dist_to_focus);
+
+
+
+  // main render function
   render<<<blocks, threads>>>(fb, nx, ny,
                               Vec3(-2.0, -1.0, -1.0),
                               Vec3(4.0, 0.0, 0.0),
@@ -126,24 +177,9 @@ int main() {
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
   std::cout << "Time taken: " << duration.count() << " microseconds" << std::endl;
 
-
-
-//  const int object_N = 5;
-//  Hitable* list[object_N];
-//  list[0] = new Sphere(Vec3(0, 0, -1), 0.5, std::make_shared<lambertian>(Vec3(0.8, 0.2, 0.3)));
-//  list[1] = new Sphere(Vec3(0, -100.5, -1), 100, std::make_shared<lambertian>(Vec3(0.8, 0.8, 0.1)));
-//  list[2] = new Sphere(Vec3(1, 0, -1), 0.5, std::make_shared<metal>(Vec3(0.8, 0.6, 0.2), 0.0));
-//  list[3] = new Sphere(Vec3(-1, 0, -1), 0.5, std::make_shared<dielectric>(1.5));
-//  list[4] = new Sphere(Vec3(-1, 0, -1), -0.45, std::make_shared<dielectric>(1.5));
-//  Hitable* world = new HitableList(list, object_N);
+  // make image to write to
   Image image(nx, ny);
-//  auto rng = RandomGenerator(1);
 
-//  Vec3 lookfrom(3,3,2);
-//  Vec3 lookat(0,0,-1);
-//  float dist_to_focus = (lookfrom-lookat).length();
-//  float aperture = 2.0;
-//  Camera camera = Camera(lookfrom, lookat, Vec3(0,1,0) ,20, float(nx)/float(ny), aperture, dist_to_focus);
 
 
   // Generate the image
