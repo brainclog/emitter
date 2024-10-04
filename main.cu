@@ -13,6 +13,7 @@
 #include "Image.h"
 #include "Camera.h"
 #include "Material.h"
+#include "BVH.h"
 
 
 
@@ -103,10 +104,10 @@ __global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_cam
     *d_camera   = new Camera(lookfrom,
                              lookat,
                              Vec3(0,1,0),
-                             20.0,
+                             40.0,
                              float(nx)/float(ny),
                              aperture,
-                             dist_to_focus);
+                             dist_to_focus, 0.0f, 1.0f);
   }
 }
 
@@ -120,6 +121,14 @@ __global__ void free_world(Hitable **d_list, Hitable **d_world, Camera **d_camer
   delete *d_camera;
 
 }
+
+
+
+
+
+
+
+
 
 
 int main() {

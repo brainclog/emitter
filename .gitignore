@@ -6,5 +6,6 @@
 *.fatbin
 
 /cmake-build-debug/
+/cmake-build-release/
 /output.png
 .DS_Store

@@ -11,5 +11,7 @@ add_executable(emitter main.cu)
 set_target_properties(emitter PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON)
 
-# Set CUDA architecture for RTX 3050 (my gpu)
+# Set CUDA architecture for RTX 3050
 set_property(TARGET emitter PROPERTY CUDA_ARCHITECTURES 86)
+
+set(CMAKE_CUDA_FLAGS "-lineinfo")
