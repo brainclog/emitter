@@ -13,7 +13,7 @@
 #include "Image.h"
 #include "Camera.h"
 #include "Material.h"
-#include "BVH.h"
+#include "Texture.h"
 
 
 
@@ -91,16 +91,20 @@ __global__ void render(Vec3 *fb, int max_x, int max_y, int ns,
 __global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N) {
 
   if (threadIdx.x == 0 && blockIdx.x == 0) {
-    *(d_list) = new Sphere(Vec3(0, 0, -1), 0.5, new lambertian(Vec3(0.8, 0.2, 0.3)));
-    *(d_list+1) = new Sphere(Vec3(0, -100.5, -1), 100, new lambertian(Vec3(0.8, 0.8, 0.1)));
-    *(d_list+2) = new Sphere(Vec3(1, 0, -1), 0.5, new metal(Vec3(0.8, 0.6, 0.2), 0.0));
+
+    Texture *bigSphereChecker = new CheckerTexture(new ConstantTexture(Vec3(0.2, 0.3, 0.1)), new ConstantTexture(Vec3(0.9, 0.9, 0.9)));
+
+    *(d_list) = new Sphere(Vec3(0, 0, -1), 0.5, new lambertian(new ConstantTexture(Vec3(0.8, 0.2, 0.3))));
+//    *(d_list+1) = new Sphere(Vec3(0, -100.5, -1), 100, new lambertian(bigSphereChecker));
+    *(d_list+1) = new Sphere(Vec3(0, -100.5, -1), 100, new lambertian(bigSphereChecker));
+    *(d_list+2) = new Sphere(Vec3(1, 0, -1), 0.5, new metal(new ConstantTexture(Vec3(0.8, 0.6, 0.2)), 0.0f));
     *(d_list+3) = new Sphere(Vec3(-1, 0, -1), 0.5, new dielectric(1.5));
     *(d_list+4) = new Sphere(Vec3(-1, 0, -1), -0.45, new dielectric(1.5));
     *d_world    = new HitableList(d_list, object_N);
     Vec3 lookfrom(3,3,2);
     Vec3 lookat(0,0,-1);
     float dist_to_focus = (lookfrom-lookat).length();
-    float aperture = 2.0;
+    float aperture = 0.3;
     *d_camera   = new Camera(lookfrom,
                              lookat,
                              Vec3(0,1,0),
@@ -145,7 +149,7 @@ int main() {
   const int object_N = 5;
 
   Hitable **d_list;
-  checkCudaErrors(   cudaMalloc(  (void **)&d_list  , object_N*sizeof(Hitable *)));
+  checkCudaErrors(   cudaMalloc(  (void **)&d_list, object_N*sizeof(Hitable *)));
   Hitable **d_world;
   checkCudaErrors(cudaMalloc((void **)&d_world, sizeof(Hitable *)));
   Camera **d_camera;

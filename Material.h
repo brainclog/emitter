@@ -1,4 +1,5 @@
 #include "Hitable.h"
+#include "Texture.h"
 
 __device__ Vec3 randomUnitVector(curandState *local_rand_state){
   Vec3 p;
@@ -22,36 +23,35 @@ public:
 
 class lambertian : public Material {
 public:
-  __device__ explicit lambertian(const Vec3& albedo) : albedo(albedo) {}
+  __device__ explicit lambertian(Texture *a) : albedo(a) {}
   __device__ bool scatter(const Ray& r_in, const HitRecord& rec, Vec3& attenuation, Ray& scattered, curandState *local_rand_state)
   const override {
     Vec3 target = rec.p + rec.normal + randomUnitVector(local_rand_state);
     scattered = Ray(rec.p, target-rec.p, r_in.time());
-    attenuation = albedo;
+    attenuation = albedo->value(0,0,rec.p);
     return true;
   }
 
 private:
-  Vec3 albedo;
+  Texture *albedo;
 };
 
 
 class metal : public Material {
 public:
-  __device__ explicit metal(const Vec3& albedo, double f) : albedo(albedo) {if (f < 1) fuzz = f; else fuzz = 1; }
+  __device__ explicit metal(Texture *a, double f) : albedo(a) {if (f < 1) fuzz = f; else fuzz = 1; }
 
   __device__ bool scatter(const Ray& r_in, const HitRecord& rec, Vec3& attenuation, Ray& scattered, curandState *local_rand_state)
   const override {
     Vec3 reflected = reflect(unit_vector(r_in.direction()), rec.normal);
     scattered = Ray(rec.p, reflected + fuzz*randomUnitVector(local_rand_state), r_in.time());
-    attenuation = albedo;
+    attenuation = albedo->value(0,0,rec.p);
     return (dot(scattered.direction(), rec.normal) > 0.0f);
   }
 
 private:
-  Vec3 albedo;
+  Texture *albedo;
   float fuzz;
-//  double fuzz;
 };
 
 
