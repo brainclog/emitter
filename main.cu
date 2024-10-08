@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cfloat>
 #include <curand_kernel.h>
+#include "cuda_texture_types.h"
+#include "cuda_runtime.h"
 
 #include "Vec3.h"
 #include "Ray.h"
@@ -14,6 +16,8 @@
 #include "Camera.h"
 #include "Material.h"
 #include "Texture.h"
+
+#include <filesystem>
 
 
 
@@ -67,7 +71,7 @@ __global__ void render_init(int nx, int ny, curandState *rand_state, unsigned lo
 }
 
 __global__ void render(Vec3 *fb, int max_x, int max_y, int ns,
-                       Camera ** cam, Hitable **world, curandState *rand_state){
+                       Camera ** cam, Hitable **world, curandState *rand_state) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
   if((i >= max_x) || (j >= max_y)) return;
@@ -88,14 +92,16 @@ __global__ void render(Vec3 *fb, int max_x, int max_y, int ns,
   fb[pixel_index] = px_color;
 }
 
-__global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N) {
+__global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N, cudaTextureObject_t textureObject) {
 
   if (threadIdx.x == 0 && blockIdx.x == 0) {
+//       from the d_img_data, create the ImageTexture object
+    ImageTexture* earth_img = new ImageTexture(textureObject);
 
     Texture *bigSphereChecker = new CheckerTexture(new ConstantTexture(Vec3(0.2, 0.3, 0.1)), new ConstantTexture(Vec3(0.9, 0.9, 0.9)));
 
-    *(d_list) = new Sphere(Vec3(0, 0, -1), 0.5, new lambertian(new ConstantTexture(Vec3(0.8, 0.2, 0.3))));
-//    *(d_list+1) = new Sphere(Vec3(0, -100.5, -1), 100, new lambertian(bigSphereChecker));
+    *(d_list) = new Sphere(Vec3(0, 0, -1), 0.5, new lambertian(earth_img));
+//    *(d_list) = new Sphere(Vec3(0, 0, -1), 0.5, new lambertian(new ConstantTexture(Vec3(0.8, 0.2, 0.3))));
     *(d_list+1) = new Sphere(Vec3(0, -100.5, -1), 100, new lambertian(bigSphereChecker));
     *(d_list+2) = new Sphere(Vec3(1, 0, -1), 0.5, new metal(new ConstantTexture(Vec3(0.8, 0.6, 0.2)), 0.0f));
     *(d_list+3) = new Sphere(Vec3(-1, 0, -1), 0.5, new dielectric(1.5));
@@ -117,7 +123,7 @@ __global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_cam
 
 __global__ void free_world(Hitable **d_list, Hitable **d_world, Camera **d_camera) {
   for(int i=0; i < 5; i++) {
-    delete ((Sphere*)d_list[i])->mat_ptr; // this line makes the code crash ! ! ! ! ! ! ! !
+    delete ((Sphere*)d_list[i])->mat_ptr;
     delete d_list[i];
   }
 
@@ -128,6 +134,19 @@ __global__ void free_world(Hitable **d_list, Hitable **d_world, Camera **d_camer
 
 
 
+__global__ void debug_texture_kernel(cudaTextureObject_t tex, float* output, int width, int height) {
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x < width && y < height) {
+    float u = (float)x / (float)width;
+    float v = (float)y / (float)height;
+    float4 texel = tex2D<float4>(tex, u, 1.0f - v);
+    int idx = (y * width + x) * 3;
+    output[idx] = texel.x;
+    output[idx+1] = texel.y;
+    output[idx+2] = texel.z;
+  }
+}
 
 
 
@@ -138,7 +157,7 @@ __global__ void free_world(Hitable **d_list, Hitable **d_world, Camera **d_camer
 int main() {
   const int nx = 800;
   const int ny = 400;
-  const int ns = 100;
+  const int ns = 1000;
   int tx = 8;
   int ty = 8;
   const int rSEED = 1;
@@ -148,6 +167,62 @@ int main() {
 
   const int object_N = 5;
 
+//  /// texture allocation begin
+
+  int width, height, channels;
+  unsigned char* img = stbi_load("../earthmap1kpng.png", &width, &height, &channels, 0);
+  if (!img) {
+    // Handle error
+    fprintf(stderr, "Failed to load image\n");
+    exit(2);
+  }
+  printf("width: %d, height: %d, channels: %d\n", width, height, channels);
+
+  // allocate texture array on device and copy image data to it
+
+  cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
+  cudaArray* cuArray;
+  cudaMallocArray(&cuArray, &channelDesc, width, height);
+
+  cudaMemcpy2DToArray(cuArray, 0, 0, img, width * channels, width * channels, height, cudaMemcpyHostToDevice);
+
+  struct cudaResourceDesc resDesc;
+  memset(&resDesc, 0, sizeof(resDesc));
+  resDesc.resType = cudaResourceTypeArray;
+  resDesc.res.array.array = cuArray;
+
+  struct cudaTextureDesc texDesc;
+  memset(&texDesc, 0, sizeof(texDesc));
+  texDesc.addressMode[0] = cudaAddressModeWrap;
+  texDesc.addressMode[1] = cudaAddressModeWrap;
+  texDesc.filterMode = cudaFilterModeLinear;
+  texDesc.readMode = cudaReadModeNormalizedFloat;
+  texDesc.normalizedCoords = 1;
+
+  cudaTextureObject_t texObj = 0;
+  cudaCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
+
+//
+//// Host code
+//  float* d_output;
+//  cudaMalloc(&d_output, width * height * 3 * sizeof(float));
+//
+//  dim3 block(16, 16);
+//  dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
+//  debug_texture_kernel<<<grid, block>>>(texObj, d_output, width, height);
+//
+//  float* h_output = new float[width * height * 3];
+//  cudaMemcpy(h_output, d_output, width * height * 3 * sizeof(float), cudaMemcpyDeviceToHost);
+//
+//// Print some values
+//  for (int i = 0; i < 10; i++) {
+//    printf("Pixel %d: (%f, %f, %f)\n", i, h_output[i*3], h_output[i*3+1], h_output[i*3+2]);
+//  }
+//
+
+
+  /// texture allocation end
+
   Hitable **d_list;
   checkCudaErrors(   cudaMalloc(  (void **)&d_list, object_N*sizeof(Hitable *)));
   Hitable **d_world;
@@ -155,7 +230,7 @@ int main() {
   Camera **d_camera;
   checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(Camera *)));
 
-  create_world<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N);
+  create_world<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
@@ -166,7 +241,6 @@ int main() {
   // allocate a cuRAND d_rand_state object for every pixel
   curandState *d_rand_state;
   checkCudaErrors(cudaMalloc((void **)&d_rand_state, num_pixels*sizeof(curandState)));
-
 
 
   dim3 blocks((nx + tx - 1) / tx, (ny + ty - 1) / ty);
@@ -194,6 +268,7 @@ int main() {
     }
   }
 
+//  stbi_image_free(img);
   image.save("../output.png");
 
   checkCudaErrors(cudaDeviceSynchronize());

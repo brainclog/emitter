@@ -28,7 +28,7 @@ public:
   const override {
     Vec3 target = rec.p + rec.normal + randomUnitVector(local_rand_state);
     scattered = Ray(rec.p, target-rec.p, r_in.time());
-    attenuation = albedo->value(0,0,rec.p);
+    attenuation = albedo->value(rec.u, rec.v, rec.p);
     return true;
   }
 

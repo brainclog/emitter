@@ -2,6 +2,7 @@
 #include <memory>
 #include <utility>
 #include "Hitable.h"
+#include "Texture.h"
 
 class Material;
 
@@ -36,6 +37,7 @@ __device__ bool Sphere::hit(const Ray &r, float t_min, float t_max, HitRecord &r
       rec.t = temp;
       rec.p = r.point_at_parameter(rec.t);
       rec.normal = (rec.p - center) / radius;
+      get_sphere_uv(rec.normal, rec.u, rec.v);
       return true;
     }
     temp = (-b + sqrtf(discriminant))/a;
@@ -43,6 +45,7 @@ __device__ bool Sphere::hit(const Ray &r, float t_min, float t_max, HitRecord &r
       rec.t = temp;
       rec.p = r.point_at_parameter(rec.t);
       rec.normal = (rec.p - center) / radius;
+      get_sphere_uv(rec.normal, rec.u, rec.v);
       return true;
     }
   }
@@ -86,6 +89,8 @@ __device__ bool MovingSphere::hit(const Ray &r, float t_min, float t_max, HitRec
       rec.t = temp;
       rec.p = r.point_at_parameter(rec.t);
       rec.normal = (rec.p - center(r.time())) / radius;
+      get_sphere_uv(rec.normal, rec.u, rec.v);
+
       return true;
     }
     temp = (-b + sqrtf(discriminant))/a;
@@ -93,6 +98,7 @@ __device__ bool MovingSphere::hit(const Ray &r, float t_min, float t_max, HitRec
       rec.t = temp;
       rec.p = r.point_at_parameter(rec.t);
       rec.normal = (rec.p - center(r.time())) / radius;
+      get_sphere_uv(rec.normal, rec.u, rec.v);
       return true;
     }
   }
