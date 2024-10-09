@@ -149,28 +149,12 @@ __global__ void debug_texture_kernel(cudaTextureObject_t tex, float* output, int
 }
 
 
-
-
-
-
-
-int main() {
-  const int nx = 800;
-  const int ny = 400;
-  const int ns = 1000;
-  int tx = 8;
-  int ty = 8;
-  const int rSEED = 1;
-
-  int num_pixels = nx*ny;
-  size_t fb_size = 3 * num_pixels * sizeof(float);
-
-  const int object_N = 5;
+cudaTextureObject_t createImageTexture(const char *const filename){
 
 //  /// texture allocation begin
 
   int width, height, channels;
-  unsigned char* img = stbi_load("../earthmap1kpng.png", &width, &height, &channels, 0);
+  unsigned char* img = stbi_load(filename, &width, &height, &channels, 0);
   if (!img) {
     // Handle error
     fprintf(stderr, "Failed to load image\n");
@@ -202,24 +186,29 @@ int main() {
   cudaTextureObject_t texObj = 0;
   cudaCreateTextureObject(&texObj, &resDesc, &texDesc, NULL);
 
-//
-//// Host code
-//  float* d_output;
-//  cudaMalloc(&d_output, width * height * 3 * sizeof(float));
-//
-//  dim3 block(16, 16);
-//  dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
-//  debug_texture_kernel<<<grid, block>>>(texObj, d_output, width, height);
-//
-//  float* h_output = new float[width * height * 3];
-//  cudaMemcpy(h_output, d_output, width * height * 3 * sizeof(float), cudaMemcpyDeviceToHost);
-//
-//// Print some values
-//  for (int i = 0; i < 10; i++) {
-//    printf("Pixel %d: (%f, %f, %f)\n", i, h_output[i*3], h_output[i*3+1], h_output[i*3+2]);
-//  }
-//
+  stbi_image_free(img);
 
+  return texObj;
+}
+
+
+
+
+int main() {
+  const int nx = 800;
+  const int ny = 400;
+  const int ns = 1000;
+  int tx = 8;
+  int ty = 8;
+  const int rSEED = 1;
+
+  int num_pixels = nx*ny;
+  size_t fb_size = 3 * num_pixels * sizeof(float);
+
+  const int object_N = 5;
+
+  // load texture into GPU memory
+  cudaTextureObject_t texObj = createImageTexture("../earthmap1kpng.png");
 
   /// texture allocation end
 
