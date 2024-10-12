@@ -19,6 +19,7 @@ __device__ Vec3 reflect(const Vec3& v, const Vec3& n) {
 class Material  {
 public:
   __device__ virtual bool scatter(const Ray& r_in, const HitRecord& rec, Vec3& attenuation, Ray& scattered, curandState *local_rand_state) const = 0;
+  __device__ virtual Vec3 emitted(float u, float v, const Vec3& p) const {return {0,0,0};}
 };
 
 class lambertian : public Material {
@@ -113,5 +114,17 @@ public:
 
   float ref_idx;
 
+};
+
+class DiffuseLight : public Material {
+public:
+  __device__ DiffuseLight(Texture *a) : emit(a) {}
+  __device__ virtual bool scatter(const Ray& r_in, const HitRecord& rec, Vec3& attenuation, Ray& scattered, curandState *local_rand_state) const override {
+    return false;
+  }
+  __device__ virtual Vec3 emitted(float u, float v, const Vec3& p) const override {
+    return emit->value(u, v, p);
+  }
+  Texture *emit;
 };
 

@@ -1,0 +1,7 @@
+nx = 800
+ny = 400
+ns = 2500
+tx = 8
+ty = 8
+rSEED = 1
+object_N = 5

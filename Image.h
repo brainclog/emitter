@@ -19,10 +19,11 @@ public:
 
   // Function to write pixel color at specified (i, j) position
   void write_pixel(int i, int j, const Vec3& color) {
+
     int index = (j * nx + i) * 3;
-    image_data[index + 0] = static_cast<unsigned char>(255.99f * color.x()); // Red
-    image_data[index + 1] = static_cast<unsigned char>(255.99f * color.y()); // Green
-    image_data[index + 2] = static_cast<unsigned char>(255.99f * color.z()); // Blue
+    image_data[index + 0] = static_cast<unsigned char>(255.99f * color.x()); // R
+    image_data[index + 1] = static_cast<unsigned char>(255.99f * color.y()); // G
+    image_data[index + 2] = static_cast<unsigned char>(255.99f * color.z()); // B
   }
 
   // Function to save the image to a file
@@ -31,7 +32,7 @@ public:
   }
 
 private:
-  int nx, ny; // Image dimensions
+  int nx, ny;
   unsigned char* image_data; // Pointer to image buffer
 };
 

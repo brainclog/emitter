@@ -16,9 +16,10 @@
 #include "Camera.h"
 #include "Material.h"
 #include "Texture.h"
+#include "ConfigParser.h"
 
 #include <filesystem>
-
+#include <fstream>
 
 
 // limited version of checkCudaErrors from helper_cuda.h in CUDA examples
@@ -38,28 +39,43 @@ void check_cuda(cudaError_t result, char const *const func, const char *const fi
 // final color function
 __device__ Vec3 color(const Ray& r, Hitable **world, curandState *local_rand_state) {
   Ray cur_ray = r;
-  Vec3 cur_attenuation = Vec3(1.0,1.0,1.0);
+  Vec3 cur_attenuation = {1.0,1.0,1.0};
+  Vec3 result = {0,0,0};
+
   for(int i = 0; i < 50; i++) {
     HitRecord rec;
+
+    // does the ray hit anything?
     if ((*world)->hit(cur_ray, 0.001f, FLT_MAX, rec)) {
+      Vec3 emitted = rec.mat_ptr->emitted(rec.u, rec.v, rec.p);
+
       Ray scattered;
       Vec3 attenuation;
+
       if(rec.mat_ptr->scatter(cur_ray, rec, attenuation, scattered, local_rand_state)) {
+        result += cur_attenuation * emitted;
         cur_attenuation *= attenuation;
         cur_ray = scattered;
       }
       else {
-        return {0.0,0.0,0.0};
+        result += cur_attenuation * emitted;
+
+        break;
       }
     }
     else {
+      // the ray did not his anything, return background color times current attenuation..!
       Vec3 unit_direction = unit_vector(cur_ray.direction());
       float t = 0.5f*(unit_direction.y() + 1.0f);
-      Vec3 c = (1.0f-t)*Vec3(1.0, 1.0, 1.0) + t*Vec3(0.5, 0.7, 1.0);
-      return cur_attenuation * c;
+      Vec3 background = (1.0f-t)*Vec3(0.6, 0.6, 0.8) + t*Vec3(0.3, 0.5, 0.7);
+
+      // c is background color
+//      Vec3 background = Vec3(0.0, 0.0, 0.0);
+      result += cur_attenuation * background; // maybe * instead? or just =
+      break;
     }
   }
-  return {0.0,0.0,0.0}; // exceeded recursion
+  return result; // exceeded recursion
 }
 
 __global__ void render_init(int nx, int ny, curandState *rand_state, unsigned long long SEED) {
@@ -95,7 +111,7 @@ __global__ void render(Vec3 *fb, int max_x, int max_y, int ns,
 __global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N, cudaTextureObject_t textureObject) {
 
   if (threadIdx.x == 0 && blockIdx.x == 0) {
-//       from the d_img_data, create the ImageTexture object
+//  create ImageTexture from cuda texture object
     ImageTexture* earth_img = new ImageTexture(textureObject);
 
     Texture *bigSphereChecker = new CheckerTexture(new ConstantTexture(Vec3(0.2, 0.3, 0.1)), new ConstantTexture(Vec3(0.9, 0.9, 0.9)));
@@ -103,7 +119,8 @@ __global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_cam
     *(d_list) = new Sphere(Vec3(0, 0, -1), 0.5, new lambertian(earth_img));
 //    *(d_list) = new Sphere(Vec3(0, 0, -1), 0.5, new lambertian(new ConstantTexture(Vec3(0.8, 0.2, 0.3))));
     *(d_list+1) = new Sphere(Vec3(0, -100.5, -1), 100, new lambertian(bigSphereChecker));
-    *(d_list+2) = new Sphere(Vec3(1, 0, -1), 0.5, new metal(new ConstantTexture(Vec3(0.8, 0.6, 0.2)), 0.0f));
+    *(d_list+2) = new Sphere(Vec3(1, 0, -1), 0.5, new DiffuseLight(new ConstantTexture(Vec3(1,0.9,(float)135/255))));
+//    *(d_list+2) = new Sphere(Vec3(1, 0, -1), 0.5, new metal(new ConstantTexture(Vec3(0.8, 0.6, 0.2)), 0.0f));
     *(d_list+3) = new Sphere(Vec3(-1, 0, -1), 0.5, new dielectric(1.5));
     *(d_list+4) = new Sphere(Vec3(-1, 0, -1), -0.45, new dielectric(1.5));
     *d_world    = new HitableList(d_list, object_N);
@@ -132,8 +149,6 @@ __global__ void free_world(Hitable **d_list, Hitable **d_world, Camera **d_camer
 
 }
 
-
-
 __global__ void debug_texture_kernel(cudaTextureObject_t tex, float* output, int width, int height) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -150,9 +165,6 @@ __global__ void debug_texture_kernel(cudaTextureObject_t tex, float* output, int
 
 
 cudaTextureObject_t createImageTexture(const char *const filename){
-
-//  /// texture allocation begin
-
   int width, height, channels;
   unsigned char* img = stbi_load(filename, &width, &height, &channels, 0);
   if (!img) {
@@ -195,22 +207,24 @@ cudaTextureObject_t createImageTexture(const char *const filename){
 
 
 int main() {
-  const int nx = 800;
-  const int ny = 400;
-  const int ns = 1000;
-  int tx = 8;
-  int ty = 8;
-  const int rSEED = 1;
+
+  // read config file
+
+  ConfigParser config("../config.txt");
+
+  const int nx = config.getInt("nx");
+  const int ny = config.getInt("ny");
+  const int ns = config.getInt("ns");
+  const int tx = config.getInt("tx");
+  const int ty = config.getInt("ty");
+  const int rSEED = config.getInt("rSEED");
+  const int object_N = config.getInt("object_N");
 
   int num_pixels = nx*ny;
   size_t fb_size = 3 * num_pixels * sizeof(float);
 
-  const int object_N = 5;
-
-  // load texture into GPU memory
+  // load texture into gpu memory
   cudaTextureObject_t texObj = createImageTexture("../earthmap1kpng.png");
-
-  /// texture allocation end
 
   Hitable **d_list;
   checkCudaErrors(   cudaMalloc(  (void **)&d_list, object_N*sizeof(Hitable *)));
@@ -248,16 +262,21 @@ int main() {
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
   std::cout << "Time taken: " << duration.count() << " microseconds" << std::endl;
 
+
+  std::ofstream outfile("../img_output.txt");
+
+  if (!outfile.is_open()) {exit(2);}
   // make image to write to
   Image image(nx, ny);
   // Generate the image
   for (int j = ny - 1; j >= 0; j--) {
     for (int i = 0; i < nx; i++) {
+//      outfile << i << " " << j << " ";
+      outfile << fb[j*nx+i] << std::endl;
       image.write_pixel(i, ny - 1 - j, fb[j*nx+i]);
     }
   }
-
-//  stbi_image_free(img);
+  outfile.close();
   image.save("../output.png");
 
   checkCudaErrors(cudaDeviceSynchronize());
