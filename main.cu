@@ -20,6 +20,8 @@
 #include "AA_Rectangles.h"
 #include "Box.h"
 #include "Triangle.h"
+#include "Mesh.h"
+#include "ObjParser.h"
 
 #include <filesystem>
 #include <fstream>
