@@ -1,3 +1,4 @@
+#pragma once
 #include "Hitable.h"
 
 class XY_Rectangle : public Hitable {
@@ -102,20 +103,3 @@ __device__ bool YZ_Rectangle::hit(const Ray &r, float t0, float t1, HitRecord &r
   return true;
 }
 
-class flip_normals : public Hitable {
-public:
-  __device__ flip_normals(Hitable *p) : ptr(p) {}
-  __device__ virtual bool hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const {
-    if (ptr->hit(r, t_min, t_max, rec)) {
-      rec.normal = -rec.normal;
-      return true;
-    }
-    return false;
-  }
-  __device__ virtual bool bounding_box(float t0, float t1, AABB &box) const {
-    return ptr->bounding_box(t0, t1, box);
-  }
-
-  Hitable *ptr;
-
-};

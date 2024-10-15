@@ -18,6 +18,7 @@
 #include "Texture.h"
 #include "ConfigParser.h"
 #include "AA_Rectangles.h"
+#include "Box.h"
 
 #include <filesystem>
 #include <fstream>
@@ -149,21 +150,29 @@ __global__ void free_spheres_scene(Hitable **d_list, Hitable **d_world, Camera *
   delete *d_camera;
 }
 
-__global__ void create_cornell_box_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny) {
+__global__ void create_cornell_box_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     Material *red = new lambertian(new ConstantTexture(Vec3(0.65, 0.05, 0.05)));
     Material *white = new lambertian(new ConstantTexture(Vec3(0.73, 0.73, 0.73)));
     Material *green = new lambertian(new ConstantTexture(Vec3(0.12, 0.45, 0.15)));
     Material *light = new DiffuseLight(new ConstantTexture(Vec3(15, 15, 15)));
+    Material *shiny = new metal(new ConstantTexture(Vec3(1.0, 1.0, 1.0)), 0.0f);
 
     *(d_list) = new flip_normals(new YZ_Rectangle(0, 555, 0, 555, 555, green));
     *(d_list+1) = new YZ_Rectangle(0, 555, 0, 555, 0, red);
     *(d_list+2) = new XZ_Rectangle(213, 343, 227, 332, 554, light);
     *(d_list+3) = new flip_normals( new XZ_Rectangle(0, 555, 0, 555, 555, white));
     *(d_list+4) = new XZ_Rectangle(0, 555, 0, 555, 0, white);
-
     *(d_list+5) = new flip_normals( new XY_Rectangle(0, 555, 0, 555, 555, white));
-    *d_world = new HitableList(d_list, 6);
+
+
+
+    *(d_list+6) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 165, 165), shiny), -18), Vec3(130, 0, 65));
+    *(d_list+7) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 330, 165), new dielectric(1.5)), 15), Vec3(265, 0, 295));
+
+
+
+    *d_world = new HitableList(d_list, object_N);
     Vec3 lookfrom(278, 278, -800);
     Vec3 lookat(278, 278, 0);
     float dist_to_focus = 10.0;
@@ -180,7 +189,7 @@ __global__ void create_cornell_box_scene(Hitable **d_list, Hitable **d_world, Ca
 __global__ void free_cornell_box_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera) {
 
   //memory leak here for now but using virtual destructors causes crash for some reason..
-  for(int i=0; i < 6; i++) {
+  for(int i=0; i < 8; i++) {
     delete d_list[i];
   }
 
@@ -260,6 +269,8 @@ int main() {
   int num_pixels = nx*ny;
   size_t fb_size = 3 * num_pixels * sizeof(float);
 
+  std::cout << "Starting ray tracer: "<< "width: " << nx << ", height: " << ny << ", samples: " << ns << std::endl;
+
   // load texture into gpu memory
   cudaTextureObject_t texObj = createImageTexture("../earthmap1kpng.png");
 
@@ -270,7 +281,7 @@ int main() {
   Camera **d_camera;
   checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(Camera *)));
 
-  create_cornell_box_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny);
+  create_cornell_box_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N);
 //  create_spheres_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
 
   checkCudaErrors(cudaGetLastError());
