@@ -17,6 +17,7 @@
 #include "Material.h"
 #include "Texture.h"
 #include "ConfigParser.h"
+#include "AA_Rectangles.h"
 
 #include <filesystem>
 #include <fstream>
@@ -65,12 +66,12 @@ __device__ Vec3 color(const Ray& r, Hitable **world, curandState *local_rand_sta
     }
     else {
       // the ray did not his anything, return background color times current attenuation..!
-      Vec3 unit_direction = unit_vector(cur_ray.direction());
-      float t = 0.5f*(unit_direction.y() + 1.0f);
-      Vec3 background = (1.0f-t)*Vec3(0.6, 0.6, 0.8) + t*Vec3(0.3, 0.5, 0.7);
+//      Vec3 unit_direction = unit_vector(cur_ray.direction());
+//      float t = 0.5f*(unit_direction.y() + 1.0f);
+//      Vec3 background = (1.0f-t)*Vec3(0.6, 0.6, 0.8) + t*Vec3(0.3, 0.5, 0.7);
 
       // c is background color
-//      Vec3 background = Vec3(0.0, 0.0, 0.0);
+      Vec3 background = Vec3(0.0, 0.0, 0.0);
       result += cur_attenuation * background; // maybe * instead? or just =
       break;
     }
@@ -108,7 +109,7 @@ __global__ void render(Vec3 *fb, int max_x, int max_y, int ns,
   fb[pixel_index] = px_color;
 }
 
-__global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N, cudaTextureObject_t textureObject) {
+__global__ void create_spheres_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N, cudaTextureObject_t textureObject) {
 
   if (threadIdx.x == 0 && blockIdx.x == 0) {
 //  create ImageTexture from cuda texture object
@@ -138,7 +139,7 @@ __global__ void create_world(Hitable **d_list, Hitable **d_world, Camera **d_cam
   }
 }
 
-__global__ void free_world(Hitable **d_list, Hitable **d_world, Camera **d_camera) {
+__global__ void free_spheres_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera) {
   for(int i=0; i < 5; i++) {
     delete ((Sphere*)d_list[i])->mat_ptr;
     delete d_list[i];
@@ -146,7 +147,45 @@ __global__ void free_world(Hitable **d_list, Hitable **d_world, Camera **d_camer
 
   delete *d_world;
   delete *d_camera;
+}
 
+__global__ void create_cornell_box_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny) {
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    Material *red = new lambertian(new ConstantTexture(Vec3(0.65, 0.05, 0.05)));
+    Material *white = new lambertian(new ConstantTexture(Vec3(0.73, 0.73, 0.73)));
+    Material *green = new lambertian(new ConstantTexture(Vec3(0.12, 0.45, 0.15)));
+    Material *light = new DiffuseLight(new ConstantTexture(Vec3(15, 15, 15)));
+
+    *(d_list) = new flip_normals(new YZ_Rectangle(0, 555, 0, 555, 555, green));
+    *(d_list+1) = new YZ_Rectangle(0, 555, 0, 555, 0, red);
+    *(d_list+2) = new XZ_Rectangle(213, 343, 227, 332, 554, light);
+    *(d_list+3) = new flip_normals( new XZ_Rectangle(0, 555, 0, 555, 555, white));
+    *(d_list+4) = new XZ_Rectangle(0, 555, 0, 555, 0, white);
+
+    *(d_list+5) = new flip_normals( new XY_Rectangle(0, 555, 0, 555, 555, white));
+    *d_world = new HitableList(d_list, 6);
+    Vec3 lookfrom(278, 278, -800);
+    Vec3 lookat(278, 278, 0);
+    float dist_to_focus = 10.0;
+    float aperture = 0.0;
+    *d_camera = new Camera(lookfrom,
+                           lookat,
+                           Vec3(0, 1, 0), 40.0,
+                           float(nx) / float(ny),
+                           aperture,
+                           dist_to_focus, 0.0f, 1.0f);
+  }
+}
+
+__global__ void free_cornell_box_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera) {
+
+  //memory leak here for now but using virtual destructors causes crash for some reason..
+  for(int i=0; i < 6; i++) {
+    delete d_list[i];
+  }
+
+  delete *d_world;
+  delete *d_camera;
 }
 
 __global__ void debug_texture_kernel(cudaTextureObject_t tex, float* output, int width, int height) {
@@ -204,8 +243,6 @@ cudaTextureObject_t createImageTexture(const char *const filename){
 }
 
 
-
-
 int main() {
 
   // read config file
@@ -233,7 +270,9 @@ int main() {
   Camera **d_camera;
   checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(Camera *)));
 
-  create_world<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
+  create_cornell_box_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny);
+//  create_spheres_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
+
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
@@ -263,24 +302,30 @@ int main() {
   std::cout << "Time taken: " << duration.count() << " microseconds" << std::endl;
 
 
-  std::ofstream outfile("../img_output.txt");
+//  std::ofstream outfile("../img_output.txt");
+//  if (!outfile.is_open()) {exit(2);}
 
-  if (!outfile.is_open()) {exit(2);}
   // make image to write to
   Image image(nx, ny);
   // Generate the image
   for (int j = ny - 1; j >= 0; j--) {
     for (int i = 0; i < nx; i++) {
-//      outfile << i << " " << j << " ";
-      outfile << fb[j*nx+i] << std::endl;
+      // clamp the colors to 0-1 in case there is clipping
+      fb[j*nx+i].e[0] = fb[j*nx+i].e[0] > 1.0f ? 1.0f : fb[j*nx+i].e[0];
+      fb[j*nx+i].e[1] = fb[j*nx+i].e[1] > 1.0f ? 1.0f : fb[j*nx+i].e[1];
+      fb[j*nx+i].e[2] = fb[j*nx+i].e[2] > 1.0f ? 1.0f : fb[j*nx+i].e[2];
+//      outfile << fb[j*nx+i] << std::endl;
       image.write_pixel(i, ny - 1 - j, fb[j*nx+i]);
     }
   }
-  outfile.close();
+//  outfile.close();
   image.save("../output.png");
 
   checkCudaErrors(cudaDeviceSynchronize());
-  free_world<<<1,1>>>(d_list,d_world, d_camera);
+
+  free_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera);
+//  free_spheres_scene<<<1, 1>>>(d_list, d_world, d_camera);
+
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaFree(d_camera));
   checkCudaErrors(cudaFree(d_world));

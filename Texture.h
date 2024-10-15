@@ -14,6 +14,7 @@ public:
     return color;
   }
   Vec3 color;
+
 };
 
 class CheckerTexture : public Texture {
@@ -32,25 +33,14 @@ public:
   Texture *odd;
   Texture *even;
 
-//  __device__ ~CheckerTexture() {
-//    delete even;
-//    delete odd;
-//  }
 };
 
 __device__ void get_sphere_uv(const Vec3& p, float& u, float& v) {
-//  float phi = atan2(p.z(), p.x());
-//  float theta = asin(p.y());
-//  u = 1 - (phi + CUDART_PI_F) / (2*CUDART_PI_F);
-//  v = (theta + CUDART_PI_F/2) / CUDART_PI_F;
-
   auto theta = acos(-p.y());
   auto phi = atan2(-p.z(), p.x()) + CUDART_PI_F;
 
   u = phi / (2*CUDART_PI_F);
   v = theta / CUDART_PI_F;
-  // print out the uv values
-//  printf("u: %f, v: %f\n", u, v);
 }
 
 class ImageTexture : public Texture {
