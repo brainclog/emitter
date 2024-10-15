@@ -19,6 +19,7 @@
 #include "ConfigParser.h"
 #include "AA_Rectangles.h"
 #include "Box.h"
+#include "Triangle.h"
 
 #include <filesystem>
 #include <fstream>
@@ -67,12 +68,12 @@ __device__ Vec3 color(const Ray& r, Hitable **world, curandState *local_rand_sta
     }
     else {
       // the ray did not his anything, return background color times current attenuation..!
-//      Vec3 unit_direction = unit_vector(cur_ray.direction());
-//      float t = 0.5f*(unit_direction.y() + 1.0f);
-//      Vec3 background = (1.0f-t)*Vec3(0.6, 0.6, 0.8) + t*Vec3(0.3, 0.5, 0.7);
+      Vec3 unit_direction = unit_vector(cur_ray.direction());
+      float t = 0.5f*(unit_direction.y() + 1.0f);
+      Vec3 background = (1.0f-t)*Vec3(0.5, 0.5, 0.75) + t*Vec3(0.3, 0.5, 0.7);
 
       // c is background color
-      Vec3 background = Vec3(0.0, 0.0, 0.0);
+//      Vec3 background = Vec3(0.0, 0.0, 0.0);
       result += cur_attenuation * background; // maybe * instead? or just =
       break;
     }
@@ -125,6 +126,8 @@ __global__ void create_spheres_scene(Hitable **d_list, Hitable **d_world, Camera
 //    *(d_list+2) = new Sphere(Vec3(1, 0, -1), 0.5, new metal(new ConstantTexture(Vec3(0.8, 0.6, 0.2)), 0.0f));
     *(d_list+3) = new Sphere(Vec3(-1, 0, -1), 0.5, new dielectric(1.5));
     *(d_list+4) = new Sphere(Vec3(-1, 0, -1), -0.45, new dielectric(1.5));
+    //triangle test
+    *(d_list+5) = new Triangle(Vec3(0, 2, -2), Vec3(2, -1.2, -2), Vec3(-2, -1.2, -2), new lambertian(new ConstantTexture(Vec3(0.8, 0.2, 0.3))));
     *d_world    = new HitableList(d_list, object_N);
     Vec3 lookfrom(3,3,2);
     Vec3 lookat(0,0,-1);
@@ -141,8 +144,8 @@ __global__ void create_spheres_scene(Hitable **d_list, Hitable **d_world, Camera
 }
 
 __global__ void free_spheres_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera) {
-  for(int i=0; i < 5; i++) {
-    delete ((Sphere*)d_list[i])->mat_ptr;
+  for(int i=0; i < 6; i++) {
+//    delete ((Sphere*)d_list[i])->mat_ptr;
     delete d_list[i];
   }
 
@@ -156,7 +159,7 @@ __global__ void create_cornell_box_scene(Hitable **d_list, Hitable **d_world, Ca
     Material *white = new lambertian(new ConstantTexture(Vec3(0.73, 0.73, 0.73)));
     Material *green = new lambertian(new ConstantTexture(Vec3(0.12, 0.45, 0.15)));
     Material *light = new DiffuseLight(new ConstantTexture(Vec3(15, 15, 15)));
-    Material *shiny = new metal(new ConstantTexture(Vec3(1.0, 1.0, 1.0)), 0.0f);
+    Material *shiny = new metal(new ConstantTexture(Vec3(1.0, 1.0, 1.0)), 0.03f);
 
     *(d_list) = new flip_normals(new YZ_Rectangle(0, 555, 0, 555, 555, green));
     *(d_list+1) = new YZ_Rectangle(0, 555, 0, 555, 0, red);
@@ -167,8 +170,8 @@ __global__ void create_cornell_box_scene(Hitable **d_list, Hitable **d_world, Ca
 
 
 
-    *(d_list+6) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 165, 165), shiny), -18), Vec3(130, 0, 65));
-    *(d_list+7) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 330, 165), new dielectric(1.5)), 15), Vec3(265, 0, 295));
+    *(d_list+6) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 165, 165), new dielectric(1.5)), -18), Vec3(130, 0, 65));
+    *(d_list+7) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 330, 165), shiny), 15), Vec3(265, 0, 295));
 
 
 
@@ -281,9 +284,9 @@ int main() {
   Camera **d_camera;
   checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(Camera *)));
 
-  create_cornell_box_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N);
-//  create_spheres_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
-
+//  create_cornell_box_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N);
+  create_spheres_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
+//
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
@@ -310,8 +313,7 @@ int main() {
   checkCudaErrors(cudaDeviceSynchronize());
   auto stop = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-  std::cout << "Time taken: " << duration.count() << " microseconds" << std::endl;
-
+  std::cout << "Time taken: " << duration.count() << " microseconds also known as " << duration.count()/1000000.0 << " seconds" << std::endl;
 
 //  std::ofstream outfile("../img_output.txt");
 //  if (!outfile.is_open()) {exit(2);}
@@ -334,8 +336,8 @@ int main() {
 
   checkCudaErrors(cudaDeviceSynchronize());
 
-  free_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera);
-//  free_spheres_scene<<<1, 1>>>(d_list, d_world, d_camera);
+//  free_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera);
+  free_spheres_scene<<<1, 1>>>(d_list, d_world, d_camera);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaFree(d_camera));

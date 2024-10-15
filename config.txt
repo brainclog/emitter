@@ -1,7 +1,7 @@
 nx = 800
-ny = 800
-ns = 10000
+ny = 400
+ns = 1000
 tx = 8
 ty = 8
 rSEED = 1
-object_N = 8
+object_N = 6
