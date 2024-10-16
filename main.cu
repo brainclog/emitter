@@ -21,7 +21,7 @@
 #include "Box.h"
 #include "Triangle.h"
 #include "Mesh.h"
-#include "ObjParser.h"
+#include "ObjFile.h"
 
 #include <filesystem>
 #include <fstream>
@@ -216,6 +216,44 @@ __global__ void debug_texture_kernel(cudaTextureObject_t tex, float* output, int
   }
 }
 
+__global__ void meshFromTriangleArray(Hitable **d_mesh, Hitable **d_MeshTriangles, Vec3 *d_points, size_t nPoints, Vec3 *d_faces, size_t nFaces) {
+  int l = 0;
+  Material *mat = new lambertian(new ConstantTexture(Vec3(0.8, 0.2, 0.3)));
+  for (int i = 0; i < nFaces; i++) {
+    Vec3 face = d_faces[i];
+    Vec3 p0 = d_points[(int)face[0]]; // get the points from the array
+    Vec3 p1 = d_points[(int)face[1]];
+    Vec3 p2 = d_points[(int)face[2]];
+    *(d_MeshTriangles + l) = new Triangle(p0, p1, p2, mat); // fill up the array with Triangle hitables
+    l++;
+  }
+
+  *d_mesh = new HitableList(d_MeshTriangles, l); // now create the HitableList with triangle array
+}
+
+__global__ void create_mesh_scene(Hitable **mesh, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N) {
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    *d_world = *mesh;
+    Vec3 lookfrom(10,10,2);
+    Vec3 lookat(0,0,-1);
+    float dist_to_focus = (lookfrom-lookat).length();
+    float aperture = 0.0;
+    *d_camera   = new Camera(lookfrom,
+                             lookat,
+                             Vec3(0,1,0),
+                             40.0,
+                             float(nx)/float(ny),
+                             aperture,
+                             dist_to_focus, 0.0f, 1.0f);
+  }
+
+}
+
+__global__ void free_mesh_scene(Hitable **mesh, Hitable **d_world, Camera **d_camera) {
+  delete *mesh;
+  delete *d_world;
+  delete *d_camera;
+}
 
 cudaTextureObject_t createImageTexture(const char *const filename){
   int width, height, channels;
@@ -276,6 +314,48 @@ int main() {
 
   std::cout << "Starting ray tracer: "<< "width: " << nx << ", height: " << ny << ", samples: " << ns << std::endl;
 
+
+//   load mesh begin
+
+
+
+  ObjFile teapot_obj("../teapot.obj");
+//  exit(4);
+
+
+  size_t nPoints = teapot_obj.points.size();
+  size_t pointsArraySize = nPoints * sizeof(Vec3);
+  size_t nFaces = teapot_obj.faces.size();
+  size_t facesArraySize = nFaces * sizeof(Vec3);
+
+  //  allocate memory for vertices on device
+  Vec3 *d_points;
+  checkCudaErrors(cudaMalloc((void **)&d_points, pointsArraySize));
+  checkCudaErrors(cudaMemcpy(d_points, teapot_obj.points.data(), pointsArraySize, cudaMemcpyHostToDevice));
+
+  //  allocate memory for faces on device
+  Vec3 *d_faces;
+  checkCudaErrors(cudaMalloc((void **)&d_faces, facesArraySize));
+  checkCudaErrors(cudaMemcpy(d_faces, teapot_obj.faces.data(), facesArraySize, cudaMemcpyHostToDevice));
+
+  // allocate memory for Hitable list for the triangles of the loaded mesh
+  Hitable **d_MeshTriangles;
+  checkCudaErrors(cudaMalloc((void **)&d_MeshTriangles, nFaces * sizeof(Hitable *)));
+
+//  Mesh *teapot = new Mesh(d_points, nPoints, d_faces, nFaces, new lambertian(new ConstantTexture(Vec3(0.8, 0.2, 0.3))));
+  Hitable **d_mesh;
+  checkCudaErrors(cudaMalloc((void **)&d_mesh, sizeof(Hitable *)));
+  // all the prep for the mehs is done, now create the mesh on device from the loaded data
+  meshFromTriangleArray<<<1, 1>>>(d_mesh, d_MeshTriangles, d_points, nPoints, d_faces, nFaces);
+
+
+
+//   mesh done
+
+
+
+
+
   // load texture into gpu memory
   cudaTextureObject_t texObj = createImageTexture("../earthmap1kpng.png");
 
@@ -287,8 +367,10 @@ int main() {
   checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(Camera *)));
 
 //  create_cornell_box_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N);
-  create_spheres_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
-//
+//  create_spheres_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
+
+  create_mesh_scene<<<1, 1>>>(d_mesh, d_world, d_camera, nx, ny, object_N);
+
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
@@ -338,8 +420,8 @@ int main() {
 
   checkCudaErrors(cudaDeviceSynchronize());
 
-//  free_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera);
-  free_spheres_scene<<<1, 1>>>(d_list, d_world, d_camera);
+  free_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera);
+//  free_spheres_scene<<<1, 1>>>(d_list, d_world, d_camera);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaFree(d_camera));
