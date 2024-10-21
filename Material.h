@@ -1,4 +1,4 @@
-#include "Hitable.h"
+#include "hitable/Hitable.h"
 #include "Texture.h"
 
 __device__ Vec3 randomUnitVector(curandState *local_rand_state){

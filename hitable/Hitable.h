@@ -90,7 +90,7 @@ public:
 };
 
 __device__ rotate_y::rotate_y(Hitable *p, float angle) : ptr(p) {
-  float radians = (M_PI / 180.0) * angle;
+  float radians = (M_PI / 180.0f) * angle;
   sin_theta = sin(radians);
   cos_theta = cos(radians);
   hasbox = ptr->bounding_box(0, 1, bbox);

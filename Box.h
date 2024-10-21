@@ -1,5 +1,5 @@
 #pragma once
-#include "Hitable.h"
+#include "hitable/Hitable.h"
 #include "AA_Rectangles.h"
 
 class Box : public Hitable {

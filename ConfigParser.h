@@ -21,10 +21,8 @@ public:
   }
 
 private:
-  // Storage for the key-value pairs (config variables)
   std::unordered_map<std::string, std::string> config;
 
-  // Method to parse the config file
   void parseFile(const std::string& filename) {
     std::ifstream file(filename);
     std::string line;

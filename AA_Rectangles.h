@@ -1,5 +1,5 @@
 #pragma once
-#include "Hitable.h"
+#include "hitable/Hitable.h"
 
 class XY_Rectangle : public Hitable {
 public:
