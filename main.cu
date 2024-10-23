@@ -17,7 +17,7 @@
 #include "Material.h"
 #include "Texture.h"
 #include "ConfigParser.h"
-#include "AA_Rectangles.h"
+#include "hitable/AA_Rectangles.h"
 #include "Box.h"
 #include "hitable/Triangle.h"
 #include "hitable/Mesh.h"

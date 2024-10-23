@@ -22,7 +22,8 @@ struct HitRecord{
 class Hitable {
 public:
   __device__ virtual bool hit(const Ray& r, float t_min, float t_max, HitRecord& rec) const = 0;
-  __device__ virtual bool bounding_box(float t0, float t1, AABB& box) const = 0;
+//  __device__ virtual bool bounding_box(float t0, float t1, AABB& box) const = 0;
+  __device__ virtual AABB* get_bbox() = 0;
 };
 
 __device__ inline float ffmin (float a, float b) {return a < b ? a : b;}
@@ -40,9 +41,8 @@ public:
     }
     return false;
   }
-  __device__ virtual bool bounding_box(float t0, float t1, AABB &box) const {
-    return ptr->bounding_box(t0, t1, box);
-  }
+  __device__ virtual AABB* get_bbox() { return ptr->get_bbox(); }
+
   Hitable *ptr;
 };
 
@@ -50,7 +50,8 @@ class translate : public Hitable {
 public:
   __device__ translate(Hitable *p, const Vec3 &displacement) : ptr(p), offset(displacement) {}
   __device__ virtual bool hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const;
-  __device__ virtual bool bounding_box(float t0, float t1, AABB &box) const;
+//  __device__ virtual bool bounding_box(float t0, float t1, AABB &box) const;
+  __device__ virtual AABB* get_bbox() { return ptr->get_bbox(); }
 
   Hitable *ptr;
   Vec3 offset;
@@ -65,27 +66,21 @@ __device__ bool translate::hit(const Ray &r, float t_min, float t_max, HitRecord
   return false;
 }
 
-__device__ bool translate::bounding_box(float t0, float t1, AABB &box) const {
-  if (ptr->bounding_box(t0, t1, box)) {
-    box = AABB(box.min() + offset, box.max() + offset);
-    return true;
-  }
-  return false;
-}
 
 class rotate_y : public Hitable {
 public:
   __device__ rotate_y(Hitable *p, float angle);
   __device__ virtual bool hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const;
-  __device__ virtual bool bounding_box(float t0, float t1, AABB &box) const {
-    box = bbox;
-    return hasbox;
-  }
+//  __device__ virtual bool bounding_box(float t0, float t1, AABB &box) const {
+//    box = bbox;
+//    return hasbox;
+//  }
+  __device__ virtual AABB* get_bbox() { return ptr->get_bbox(); }
 
   Hitable *ptr;
   float sin_theta;
   float cos_theta;
-  bool hasbox;
+//  bool hasbox;
   AABB bbox;
 };
 
@@ -93,7 +88,7 @@ __device__ rotate_y::rotate_y(Hitable *p, float angle) : ptr(p) {
   float radians = (M_PI / 180.0f) * angle;
   sin_theta = sin(radians);
   cos_theta = cos(radians);
-  hasbox = ptr->bounding_box(0, 1, bbox);
+//  hasbox = ptr->bounding_box(0, 1, bbox);
   Vec3 min(FLT_MAX, FLT_MAX, FLT_MAX);
   Vec3 max(-FLT_MAX, -FLT_MAX, -FLT_MAX);
   for (int i = 0; i < 2; i++) {

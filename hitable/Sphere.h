@@ -10,21 +10,28 @@ class Sphere: public Hitable {
 public:
   __device__ Sphere() {}
   __device__ Sphere(Vec3 cen, float r, Material *mat)
-          : center(cen), radius(r), mat_ptr(mat) {}
-  __device__ virtual bool hit(const Ray&r, float tmin, float tmax, HitRecord& rec) const;
-  __device__ virtual bool bounding_box(float t0, float t1, AABB& box) const;
+          : center(cen), radius(r), mat_ptr(mat) {
+    bbox = AABB(center - Vec3(radius, radius, radius), center + Vec3(radius, radius, radius));
+  }
+  __device__ bool hit(const Ray&r, float tmin, float tmax, HitRecord& rec) const override;
+//  __device__ virtual bool bounding_box(float t0, float t1, AABB& box) const;
+  __device__ AABB* get_bbox() override { return &bbox; }
 
   Vec3 center;
   float radius;
   Material *mat_ptr;
+
+  AABB bbox;
 };
 
-__device__ bool Sphere::bounding_box(float t0, float t1, AABB& box) const {
-  box = AABB(center - Vec3(radius, radius, radius), center + Vec3(radius, radius, radius));
-  return true;
-}
+//__device__ bool Sphere::bounding_box(float t0, float t1, AABB& box) const {
+//  box = AABB(center - Vec3(radius, radius, radius), center + Vec3(radius, radius, radius));
+//  return true;
+//}
 
 __device__ bool Sphere::hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const {
+
+
   Vec3 oc = r.origin() - center;
   rec.mat_ptr = mat_ptr;
   float a = dot(r.direction(), r.direction());

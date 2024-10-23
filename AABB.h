@@ -11,7 +11,6 @@ public:
 
   __device__ AABB(const Interval& x, const Interval& y, const Interval& z)
           : x(x), y(y), z(z) {
-    // init the min and max
     _min = Vec3(x.min, y.min, z.min);
     _max = Vec3(x.max, y.max, z.max);
   }
@@ -48,13 +47,28 @@ public:
     if (n == 2) return z;
     return x;
   }
-  int longest_axis() const {
+  __device__ int longest_axis() const {
     // Returns the index of the longest axis of the bounding box.
 
     if (x.size() > y.size())
       return x.size() > z.size() ? 0 : 2;
     else
       return y.size() > z.size() ? 1 : 2;
+  }
+
+  __device__ Vec3 centroid() {
+    // Returns the centroid of the bounding box, checks for nans
+    Vec3 center{(x.min + x.max) / 2, (y.min + y.max) / 2, (z.min + z.max) / 2};
+    if(isfinite(center[0]) || isfinite(center[1]) || isfinite(center[2])){
+      return {0,0,0};
+    }
+    return center;
+  }
+
+  __device__ void expand(float delta) {
+    x.expand(delta);
+    y.expand(delta);
+    z.expand(delta);
   }
 
   __device__ static AABB empty() {
@@ -66,17 +80,6 @@ public:
   }
 };
 
-
-
-__device__ AABB surrounding_box(const AABB& box0, const AABB& box1) {
-  Vec3 small(fmin(box0.min().x(), box1.min().x()),
-             fmin(box0.min().y(), box1.min().y()),
-             fmin(box0.min().z(), box1.min().z()));
-  Vec3 big(fmax(box0.max().x(), box1.max().x()),
-           fmax(box0.max().y(), box1.max().y()),
-           fmax(box0.max().z(), box1.max().z()));
-  return {small, big};
-}
 
 
 

@@ -1,19 +1,18 @@
 #pragma once
 #include "hitable/Hitable.h"
-#include "AA_Rectangles.h"
+#include "hitable/AA_Rectangles.h"
 
 class Box : public Hitable {
 public:
   __device__ Box() {}
   __device__ Box(const Vec3& p0, const Vec3& p1, Material* mat);
   __device__ virtual bool hit(const Ray& r, float t_min, float t_max, HitRecord& rec) const;
-  __device__ virtual bool bounding_box(float t0, float t1, AABB& box) const {
-    box = AABB(pmin, pmax);
-    return true;
-  }
+  __device__ AABB* get_bbox() override { return &bbox; }
+
 
   Vec3 pmin, pmax;
   Hitable *list_ptr;
+  AABB bbox;
 };
 
 __device__ Box::Box(const Vec3 &p0, const Vec3 &p1, Material *mat) {
@@ -27,6 +26,12 @@ __device__ Box::Box(const Vec3 &p0, const Vec3 &p1, Material *mat) {
   list[4] = new YZ_Rectangle(p0.y(), p1.y(), p0.z(), p1.z(), p1.x(), mat);
   list[5] = new flip_normals(new YZ_Rectangle(p0.y(), p1.y(), p0.z(), p1.z(), p0.x(), mat));
   list_ptr = new HitableList(list, 6);
+
+  bbox = AABB(pmin, pmax);
+
+  bbox.x.expand(0.0001f);
+  bbox.y.expand(0.0001f);
+  bbox.z.expand(0.0001f);
 
 }
 

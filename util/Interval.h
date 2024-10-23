@@ -1,11 +1,14 @@
 #pragma once
 #include "math_constants.h"
+#include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
+#include <cuda_device_runtime_api.h>
 
 class Interval {
 public:
   float min, max;
 
-  __device__ Interval() : min(CUDART_INF_F), max(-CUDART_INF_F) {} // Default Interval is empty
+  __device__ Interval() {min = +CUDART_INF_F, max = -CUDART_INF_F;} // default Interval is empty
 
   __device__ Interval(float min, float max) : min(min), max(max) {}
 
@@ -18,6 +21,8 @@ public:
   __device__ float size() const {
     return max - min;
   }
+
+
 
   __device__ bool contains(float x) const {
     return min <= x && x <= max;

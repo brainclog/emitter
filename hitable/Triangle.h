@@ -12,14 +12,28 @@ public:
     vertices[0] = v0;
     vertices[1] = v1;
     vertices[2] = v2;
+
+    // init bbox;
+    float minX = min(vertices[0][0], min(vertices[1][0], vertices[2][0]));
+    float minY = min(vertices[0][1], min(vertices[1][1], vertices[2][1]));
+    float minZ = min(vertices[0][2], min(vertices[1][2], vertices[2][2]));
+
+    float maxX = max(vertices[0][0], max(vertices[1][0], vertices[2][0]));
+    float maxY = max(vertices[0][1], max(vertices[1][1], vertices[2][1]));
+    float maxZ = max(vertices[0][2], max(vertices[1][2], vertices[2][2]));
+
+    bbox = AABB(Vec3(minX, minY, minZ), Vec3(maxX, maxY, maxZ));
+
   }
   __device__ virtual bool hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const;
-  __device__ virtual bool bounding_box(float t0, float t1, AABB &box) const;
+  __device__ AABB* get_bbox() override { return &bbox; }
+
 
   const float EPSILON = 0.00001f;
   Vec3 vertices[3];
   bool culling;
   Material *mat;
+  AABB bbox;
 };
 
 __device__ bool Triangle::hit(const Ray& r, float t_min, float t_max, HitRecord& rec) const {
@@ -52,18 +66,3 @@ __device__ bool Triangle::hit(const Ray& r, float t_min, float t_max, HitRecord&
 
 }
 
-
-__device__ bool Triangle::bounding_box(float t0,
-                                       float t1,
-                                       AABB& bbox) const {
-  float minX = min(vertices[0][0], min(vertices[1][0], vertices[2][0]));
-  float minY = min(vertices[0][1], min(vertices[1][1], vertices[2][1]));
-  float minZ = min(vertices[0][2], min(vertices[1][2], vertices[2][2]));
-
-  float maxX = max(vertices[0][0], max(vertices[1][0], vertices[2][0]));
-  float maxY = max(vertices[0][1], max(vertices[1][1], vertices[2][1]));
-  float maxZ = max(vertices[0][2], max(vertices[1][2], vertices[2][2]));
-
-  bbox = AABB(Vec3(minX, minY, minZ), Vec3(maxX, maxY, maxZ));
-  return true;
-}
