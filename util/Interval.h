@@ -3,11 +3,11 @@
 
 class Interval {
 public:
-  double min, max;
+  float min, max;
 
   __device__ Interval() : min(CUDART_INF_F), max(-CUDART_INF_F) {} // Default Interval is empty
 
-  __device__ Interval(double min, double max) : min(min), max(max) {}
+  __device__ Interval(float min, float max) : min(min), max(max) {}
 
   // union of two intervals
   __device__ Interval(const Interval& a, const Interval& b) {
@@ -15,25 +15,25 @@ public:
     max = a.max >= b.max ? a.max : b.max;
   }
 
-  __device__ double size() const {
+  __device__ float size() const {
     return max - min;
   }
 
-  __device__ bool contains(double x) const {
+  __device__ bool contains(float x) const {
     return min <= x && x <= max;
   }
 
-  __device__ bool surrounds(double x) const {
+  __device__ bool surrounds(float x) const {
     return min < x && x < max;
   }
 
-  __device__ double clamp(double x) const {
+  __device__ float clamp(float x) const {
     if (x < min) return min;
     if (x > max) return max;
     return x;
   }
 
-  __device__ Interval expand(double delta) const {
+  __device__ Interval expand(float delta) const {
     auto padding = delta/2;
     return {min - padding, max + padding};
   }
