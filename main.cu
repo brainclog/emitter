@@ -22,9 +22,10 @@
 #include "hitable/Triangle.h"
 #include "hitable/Mesh.h"
 #include "util/ObjFile.h"
-
+#include "BVH.h"
 #include <filesystem>
 #include <fstream>
+#include "util/Interval.h"
 
 
 
@@ -397,7 +398,7 @@ int main() {
 
   std::cout << "Starting ray tracer: "<< "width: " << nx << ", height: " << ny << ", samples: " << ns << std::endl;
 
-  Hitable **d_mesh = loadMeshFromOBJFile("../models/bunny.obj", 1000.f);
+//  Hitable **d_mesh = loadMeshFromOBJFile("../models/bunny.obj", 1000.f);
 
   // load texture into gpu memory
   cudaTextureObject_t texObj = createImageTexture("../textures/earthmap1k.png");
@@ -450,7 +451,7 @@ int main() {
 
   checkCudaErrors(cudaDeviceSynchronize());
 
-//  free_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera);
+  free_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera);
 //  free_spheres_scene<<<1, 1>>>(d_list, d_world, d_camera);
 
   checkCudaErrors(cudaGetLastError());

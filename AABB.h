@@ -3,11 +3,18 @@
 #include "device_launch_parameters.h"
 
 #include "Ray.h"
+#include "util/Interval.h"
 
 class AABB {
 public:
   __device__ AABB() {}
-  __device__ AABB(const Vec3& a, const Vec3& b) { _min = a; _max = b; }
+  __device__ AABB(const Vec3& a, const Vec3& b) {
+    _min = a; _max = b;
+
+    x = (a[0] <= b[0]) ? Interval(a[0], b[0]) : Interval(b[0], a[0]);
+    y = (a[1] <= b[1]) ? Interval(a[1], b[1]) : Interval(b[1], a[1]);
+    z = (a[2] <= b[2]) ? Interval(a[2], b[2]) : Interval(b[2], a[2]);
+  }
 
   __device__ Vec3 min() const { return _min; }
   __device__ Vec3 max() const { return _max; }
@@ -16,9 +23,15 @@ public:
   Vec3 _min;
   Vec3 _max;
 
+  Interval x, y, z;
+
   __device__ bool hit(const Ray &r, float tmin, float tmax) const;
 
-
+  __device__ const Interval& axis_interval(int n) const {
+    if (n == 1) return y;
+    if (n == 2) return z;
+    return x;
+  }
 
 };
 
@@ -32,20 +45,31 @@ __device__ AABB surrounding_box(const AABB& box0, const AABB& box1) {
   return {small, big};
 }
 
+
+
 __device__ inline bool AABB::hit(const Ray& r, float tmin, float tmax) const{
-  for (int a = 0; a < 3; a++){
-    float invD = 1.0f / r.direction()[a];
-    float t0 = (min()[a] - r.origin()[a]) * invD;
-    float t1 = (max()[a] - r.origin()[a]) * invD;
-    if (invD < 0.0f){ // swap t0 and t1
-      float temp = t0;
-      t0 = t1;
-      t1 = temp;
+  Interval ray_t(tmin, tmax);
+  const Vec3& ray_orig = r.origin();
+  const Vec3&   ray_dir  = r.direction();
+
+  for (int axis = 0; axis < 3; axis++) {
+    const Interval& ax = axis_interval(axis);
+    const double adinv = 1.0 / ray_dir[axis];
+
+    auto t0 = (ax.min - ray_orig[axis]) * adinv;
+    auto t1 = (ax.max - ray_orig[axis]) * adinv;
+
+    if (t0 < t1) {
+      if (t0 > ray_t.min) ray_t.min = t0;
+      if (t1 < ray_t.max) ray_t.max = t1;
+    } else {
+      if (t1 > ray_t.min) ray_t.min = t1;
+      if (t0 < ray_t.max) ray_t.max = t0;
     }
-    tmin = t0 > tmin ? t0 : tmin;
-    tmax = t1 < tmax ? t1 : tmax;
-    if (tmax <= tmin)
+
+    if (ray_t.max <= ray_t.min)
       return false;
   }
   return true;
+}
 }
