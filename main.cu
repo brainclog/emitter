@@ -266,6 +266,190 @@ __host__ Hitable** loadMeshFromOBJFile(const std::string &filename, float scale 
 
 }
 
+
+__host__ void sortByMortonCode(std::vector<GlobalTriangle>& triangles, std::vector<unsigned int>& mortonCodes) {
+  // Combine into pairs
+  std::vector<std::pair<unsigned int, GlobalTriangle>> pairs(triangles.size());
+  for(size_t i = 0; i < triangles.size(); i++) {
+    pairs[i] = {mortonCodes[i], triangles[i]};
+  }
+
+// Sort pairs based on morton codes
+  std::sort(pairs.begin(), pairs.end(),
+            [](const auto& a, const auto& b) {
+              return a.first < b.first;
+            });
+
+// Split back into separate arrays
+  for(size_t i = 0; i < pairs.size(); i++) {
+    mortonCodes[i] = pairs[i].first;
+    triangles[i] = pairs[i].second;
+  }
+
+}
+
+
+__global__ void convertToDeviceTriangleArray(Triangle *d_triangles, GlobalTriangle *d_global_triangles, size_t nFaces) {
+  Material *mat = new lambertian(new ConstantTexture(Vec3(0.8, 0.2, 0.3)));
+  for (int i = 0; i < nFaces; i++) { //TODO : parallelize loop with block thread index and stride
+    Vec3 p0 = d_global_triangles[i].vertices[0]; // get the points from the array
+    Vec3 p1 = d_global_triangles[i].vertices[1];
+    Vec3 p2 = d_global_triangles[i].vertices[2];
+
+    new (&d_triangles[i]) Triangle(p0, p1, p2, mat); // use placement new
+  }
+
+}
+
+// three components: morton codes array, triangles array, # triangles
+
+__global__ void buildBVH(Triangle *d_triangles, unsigned int* d_mortonCodes, size_t nFaces) {
+//  __device__ Node* generateHierarchy( unsigned int* sortedMortonCodes,
+//                                      int*          sortedObjectIDs,
+//                                      int           numObjects)
+//  {
+  Node* root = generateHierarchy(d_mortonCodes, d_triangles, (int)nFaces);
+
+
+
+}
+
+//goal
+__host__ void load_mesh_BVH(const std::string &filename, float scale = 1.0f) {
+
+  ObjFile objFile(filename);
+
+  size_t nPoints = objFile.points.size();
+  size_t pointsArraySize = nPoints * sizeof(Vec3);
+  size_t nFaces = objFile.faces.size();
+  size_t facesArraySize = nFaces * sizeof(Vec3);
+//  for (int i = 0; i < nPoints; i++) teapot_obj.points[i] *= scale;
+
+
+
+  // make triangles
+  std::vector<GlobalTriangle> triangles;
+  for (size_t i = 0; i < nFaces; i++) {
+    Vec3 v0 = objFile.points[static_cast<int>(objFile.faces[i][0])];
+    Vec3 v1 = objFile.points[static_cast<int>(objFile.faces[i][1])];
+    Vec3 v2 = objFile.points[static_cast<int>(objFile.faces[i][2])];
+    GlobalTriangle triangle(v0, v1, v2);
+    triangles.push_back(triangle);
+  } // bounding boxes already made in the constructor
+
+  // loop over mesh to find out min and max values, store them for normalization later
+  Vec3 mesh_min = triangles[0].bbox.centroid();
+  Vec3 mesh_max = triangles[0].bbox.centroid();
+
+  for (size_t i = 1; i < nFaces; i++) {
+    Vec3 point = triangles[i].bbox.centroid();
+    mesh_min = Vec3(
+            fmin(mesh_min.x(), point.x()),
+            fmin(mesh_min.y(), point.y()),
+            fmin(mesh_min.z(), point.z())
+    );
+    mesh_max = Vec3(
+            fmax(mesh_max.x(), point.x()),
+            fmax(mesh_max.y(), point.y()),
+            fmax(mesh_max.z(), point.z())
+    );
+  }
+
+  std::vector<unsigned int> mortonCodes(nFaces);
+
+
+  // get a normalized point and then get its morton code
+  for (size_t i = 0; i < nFaces; i++) {
+    Vec3 point = triangles[i].bbox.centroid();
+    float x = (point.x() - mesh_min.x()) / (mesh_max.x() - mesh_min.x());
+    float y = (point.y() - mesh_min.y()) / (mesh_max.y() - mesh_min.y());
+    float z = (point.z() - mesh_min.z()) / (mesh_max.z() - mesh_min.z());
+    unsigned int mortonCode = morton3D(x, y, z);
+    mortonCodes[i] = mortonCode;
+  }
+
+  // sort triangles by morton code
+  sortByMortonCode(triangles, mortonCodes);
+
+  // memcpy morton codes to device
+  unsigned int *d_morton_codes;
+  checkCudaErrors(cudaMalloc((void **)&d_morton_codes, nFaces * sizeof(unsigned int)));
+  checkCudaErrors(cudaMemcpy(d_morton_codes, mortonCodes.data(), nFaces * sizeof(unsigned int), cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaGetLastError());
+
+  // the triangles are sorted by morton code, upload GlobalTriangle array to gpu
+
+  GlobalTriangle *d_global_triangles;
+  checkCudaErrors(cudaMalloc((void **)&d_global_triangles, nFaces * sizeof(GlobalTriangle)));
+  checkCudaErrors(cudaMemcpy(d_global_triangles, triangles.data(), nFaces * sizeof(GlobalTriangle), cudaMemcpyHostToDevice));
+
+  checkCudaErrors(cudaGetLastError());
+//  checkCudaErrors(cudaDeviceSynchronize());
+  //malloc contiguous memory for Triangle array, not array of pointers
+
+  Triangle *d_triangles;
+  checkCudaErrors(cudaMalloc((void **)&d_triangles, nFaces * sizeof(Triangle)));
+
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaDeviceSynchronize());
+  // convert GlobalTriangle array to Triangle array
+  convertToDeviceTriangleArray<<<1, 1>>>(d_triangles, d_global_triangles, nFaces);
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaDeviceSynchronize());
+
+  buildBVH<<<1,1>>>(d_triangles, d_morton_codes, nFaces);
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaDeviceSynchronize());
+
+
+
+
+
+
+
+
+  //
+
+
+
+
+
+
+
+
+//
+//  //  allocate memory for vertices on device
+//  Vec3 *d_points;
+//  checkCudaErrors(cudaMalloc((void **)&d_points, pointsArraySize));
+//  checkCudaErrors(cudaMemcpy(d_points, objFile.points.data(), pointsArraySize, cudaMemcpyHostToDevice));
+//
+//  //  allocate memory for faces on device
+//  Vec3 *d_faces;
+//  checkCudaErrors(cudaMalloc((void **)&d_faces, facesArraySize));
+//  checkCudaErrors(cudaMemcpy(d_faces, objFile.faces.data(), facesArraySize, cudaMemcpyHostToDevice));
+//
+//
+//  // allocate memory for Hitable list for the triangles of the loaded mesh
+//  Hitable **d_MeshTriangles;
+//  checkCudaErrors(cudaMalloc((void **)&d_MeshTriangles, nFaces * sizeof(Hitable *)));
+//
+//  Hitable **d_mesh;
+//  checkCudaErrors(cudaMalloc((void **)&d_mesh, sizeof(Hitable *)));
+//  // all the prep for the mehs is done, now create the mesh on device from the loaded data
+//  meshFromTriangleArray<<<1, 1>>>(d_mesh, d_MeshTriangles, d_points, nPoints, d_faces, nFaces);
+//  checkCudaErrors(cudaGetLastError());
+//  checkCudaErrors(cudaDeviceSynchronize());
+
+  // free faces and points on device
+//  checkCudaErrors(cudaFree(d_faces));
+//  checkCudaErrors(cudaFree(d_points));
+
+//  return d_mesh;
+
+}
+
+
+
 __global__ void create_mesh_scene(Hitable **mesh, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     *d_world = *mesh;
@@ -399,6 +583,7 @@ int main() {
   std::cout << "Starting ray tracer: "<< "width: " << nx << ", height: " << ny << ", samples: " << ns << std::endl;
 
 //  Hitable **d_mesh = loadMeshFromOBJFile("../models/bunny.obj", 1000.f);
+  load_mesh_BVH("../models/bunny.obj", 1000.f);
 
   // load texture into gpu memory
   cudaTextureObject_t texObj = createImageTexture("../textures/earthmap1k.png");

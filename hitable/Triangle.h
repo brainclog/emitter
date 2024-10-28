@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hitable/Hitable.h"
+#include "GlobalTriangle.h"
 
 // code for Triangle primitive with Möller–Trumbore algorithm for ray-triangle intersection
 
@@ -25,7 +26,10 @@ public:
     bbox = AABB(Vec3(minX, minY, minZ), Vec3(maxX, maxY, maxZ));
 
   }
-  __device__ virtual bool hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const;
+  __device__ Triangle(const GlobalTriangle &tri, Material *mat, bool culling = false)
+          : Triangle(tri.vertices[0], tri.vertices[1], tri.vertices[2], mat, culling) {}
+
+  __device__ bool hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const override;
   __device__ AABB* get_bbox() override { return &bbox; }
 
 
