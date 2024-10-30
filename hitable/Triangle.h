@@ -25,9 +25,10 @@ public:
 
     bbox = AABB(Vec3(minX, minY, minZ), Vec3(maxX, maxY, maxZ));
 
+//    printf("Newly created triangle has bbox with min: %f %f %f and max: %f %f %f\n", bbox._min.x(), bbox._min.y(), bbox._min.z(), bbox._max.x(), bbox._max.y(), bbox._max.z());
+
   }
-  __device__ Triangle(const GlobalTriangle &tri, Material *mat, bool culling = false)
-          : Triangle(tri.vertices[0], tri.vertices[1], tri.vertices[2], mat, culling) {}
+
 
   __device__ bool hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const override;
   __device__ AABB* get_bbox() override { return &bbox; }
@@ -37,10 +38,13 @@ public:
   Vec3 vertices[3];
   bool culling;
   Material *mat;
+
   AABB bbox;
+  int triArrayIndex;
 };
 
 __device__ bool Triangle::hit(const Ray& r, float t_min, float t_max, HitRecord& rec) const {
+  printf("Testing collision with triangle ArrayIndex %d\n", triArrayIndex);
 
   Vec3 e1 = vertices[1] - vertices[0];
   Vec3 e2 = vertices[2] - vertices[0];
@@ -61,6 +65,8 @@ __device__ bool Triangle::hit(const Ray& r, float t_min, float t_max, HitRecord&
 
   float t_hit = dot(e2, q) * inv_det;
   if (t_hit < t_min || t_hit > t_max) return false;
+
+  printf("Collision with triangle nodesArrayIndex %d\n", triArrayIndex);
 
   rec.t = t_hit;
   rec.p = r.point_at_parameter(t_hit);

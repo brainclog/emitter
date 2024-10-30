@@ -14,4 +14,5 @@ set_target_properties(emitter PROPERTIES
 # Set CUDA architecture for RTX 3050
 set_property(TARGET emitter PROPERTY CUDA_ARCHITECTURES 86)
 
-set(CMAKE_CUDA_FLAGS "-lineinfo")
+#set(CMAKE_CUDA_FLAGS "-lineinfo")
+set(CMAKE_CUDA_FLAGS "-Xptxas -v -g -G -lineinfo")

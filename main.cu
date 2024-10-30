@@ -6,6 +6,7 @@
 #include <curand_kernel.h>
 #include "cuda_texture_types.h"
 #include "cuda_runtime.h"
+#include <bitset>
 
 #include "Vec3.h"
 #include "Ray.h"
@@ -58,12 +59,11 @@ __device__ Vec3 color(const Ray& r, Hitable **world, curandState *local_rand_sta
     }
     else {
       // the ray did not his anything, return background color times current attenuation..!
-//      Vec3 unit_direction = unit_vector(cur_ray.direction());
-//      float t = 0.5f*(unit_direction.y() + 1.0f);
-//      Vec3 background = (1.0f-t)*Vec3(0.5, 0.5, 0.75) + t*Vec3(0.3, 0.5, 0.7);
+      Vec3 unit_direction = unit_vector(cur_ray.direction());
+      float t = 0.5f*(unit_direction.y() + 1.0f);
+      Vec3 background = (1.0f-t)*Vec3(0.5, 0.5, 0.75) + t*Vec3(0.3, 0.5, 0.7);
 
-      // c is background color
-      Vec3 background = Vec3(0.0, 0.0, 0.0);
+//      Vec3 background = Vec3(0.0, 0.0, 0.0);
       result += cur_attenuation * background; // maybe * instead? or just =
       break;
     }
@@ -286,12 +286,18 @@ __host__ void sortByMortonCode(std::vector<GlobalTriangle>& triangles, std::vect
     triangles[i] = pairs[i].second;
   }
 
+  // print out pairs of the triangle and morton code (in binary)
+//  for (size_t i = 0; i < mortonCodes.size(); i++) {
+//    std::cout << "Triangle " << i << " has morton code: " << mortonCodes[i] << " which is: " << std::bitset<32>(mortonCodes[i]) << std::endl;
+//  }
+//  exit(0);
+
 }
 
 
 __global__ void convertToDeviceTriangleArray(Triangle *d_triangles, GlobalTriangle *d_global_triangles, size_t nFaces) {
   Material *mat = new lambertian(new ConstantTexture(Vec3(0.8, 0.2, 0.3)));
-  for (int i = 0; i < nFaces; i++) { //TODO : parallelize loop with block thread index and stride
+  for (int i = 0; i < nFaces; i++) { //TODO : parallelize loop with block thread nodesArrayIndex and stride
     Vec3 p0 = d_global_triangles[i].vertices[0]; // get the points from the array
     Vec3 p1 = d_global_triangles[i].vertices[1];
     Vec3 p2 = d_global_triangles[i].vertices[2];
@@ -303,19 +309,32 @@ __global__ void convertToDeviceTriangleArray(Triangle *d_triangles, GlobalTriang
 
 // three components: morton codes array, triangles array, # triangles
 
-__global__ void buildBVH(Triangle *d_triangles, unsigned int* d_mortonCodes, size_t nFaces) {
+__global__ void buildBVH(Triangle *d_triangles, unsigned int* d_mortonCodes, size_t nFaces, BVH *d_bvh) {
+  //  __device__ Node* generateHierarchy( unsigned int* sortedMortonCodes,
 //  __device__ Node* generateHierarchy( unsigned int* sortedMortonCodes,
 //                                      int*          sortedObjectIDs,
 //                                      int           numObjects)
 //  {
-  Node* root = generateHierarchy(d_mortonCodes, d_triangles, (int)nFaces);
+
+  // pointer to d_bvh is already allocated, use placement new to put it there
+
+
+  generateHierarchy(d_mortonCodes, d_triangles, (int)nFaces, d_bvh);
+
+  //loop through triangles and print all bbox min ma for each triangle
+//
+//  for(int i = 0; i < nFaces; i++) {
+//    printf("Triangle AFTER GENERATE HIERARCHY %d: min: %f %f %f, max: %f %f %f\n", i, d_triangles[i].bbox.min().x(), d_triangles[i].bbox.min().y(), d_triangles[i].bbox.min().z(), d_triangles[i].bbox.max().x(), d_triangles[i].bbox.max().y(), d_triangles[i].bbox.max().z());
+//  }
+
+
 
 
 
 }
 
 //goal
-__host__ void load_mesh_BVH(const std::string &filename, float scale = 1.0f) {
+__host__ void load_mesh_BVH(const std::string &filename, BVH* d_bvh, float scale = 1.0f) {
 
   ObjFile objFile(filename);
 
@@ -323,9 +342,7 @@ __host__ void load_mesh_BVH(const std::string &filename, float scale = 1.0f) {
   size_t pointsArraySize = nPoints * sizeof(Vec3);
   size_t nFaces = objFile.faces.size();
   size_t facesArraySize = nFaces * sizeof(Vec3);
-//  for (int i = 0; i < nPoints; i++) teapot_obj.points[i] *= scale;
-
-
+  for (int i = 0; i < nPoints; i++) objFile.points[i] *= scale;
 
   // make triangles
   std::vector<GlobalTriangle> triangles;
@@ -397,11 +414,20 @@ __host__ void load_mesh_BVH(const std::string &filename, float scale = 1.0f) {
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
-  buildBVH<<<1,1>>>(d_triangles, d_morton_codes, nFaces);
+
+
+  buildBVH<<<1,1>>>(d_triangles, d_morton_codes, nFaces, d_bvh);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
+//  exit(10);
 
+  bbox_init_kernel<<<32,32>>>(d_bvh, d_triangles);
+
+  checkCudaErrors(cudaGetLastError());
+  checkCudaErrors(cudaDeviceSynchronize());
+
+//  exit(3);
 
 
 
@@ -453,8 +479,8 @@ __host__ void load_mesh_BVH(const std::string &filename, float scale = 1.0f) {
 __global__ void create_mesh_scene(Hitable **mesh, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     *d_world = *mesh;
-    Vec3 lookfrom(10,10,2);
-    Vec3 lookat(0,0,-1);
+    Vec3 lookfrom(10,10,10);
+    Vec3 lookat(0,0,0);
     float dist_to_focus = (lookfrom-lookat).length();
     float aperture = 0.0;
     *d_camera   = new Camera(lookfrom,
@@ -469,6 +495,30 @@ __global__ void create_mesh_scene(Hitable **mesh, Hitable **d_world, Camera **d_
 }
 
 __global__ void free_mesh_scene(Hitable **mesh, Hitable **d_world, Camera **d_camera) {
+  delete *mesh;
+  delete *d_world;
+  delete *d_camera;
+}
+
+__global__ void create_BVH_scene(BVH* d_bvh, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N) {
+  if (threadIdx.x == 0 && blockIdx.x == 0) {
+    *d_world = d_bvh->root;
+    Vec3 lookfrom(10,10,10);
+    Vec3 lookat(0,0,0);
+    float dist_to_focus = (lookfrom-lookat).length();
+    float aperture = 0.0;
+    *d_camera   = new Camera(lookfrom,
+                             lookat,
+                             Vec3(0,1,0),
+                             40.0,
+                             float(nx)/float(ny),
+                             aperture,
+                             dist_to_focus, 0.0f, 1.0f);
+  }
+
+}
+
+__global__ void free_BVH_scene(Hitable **mesh, Hitable **d_world, Camera **d_camera) {
   delete *mesh;
   delete *d_world;
   delete *d_camera;
@@ -580,10 +630,25 @@ int main() {
 
   int num_pixels = nx*ny;
 
+  size_t newStackSize = 1024 + 512;
+  cudaError_t err = cudaDeviceSetLimit(cudaLimitStackSize, newStackSize);
+  if (err != cudaSuccess) {
+    printf("Error setting stack size: %s\n", cudaGetErrorString(err));
+  }
+
+
+//  size_t stack_size;
+//  cudaDeviceGetLimit(&stack_size, cudaLimitStackSize);
+//  std::cout << "Stack size: " << stack_size << std::endl;
+//  exit(123)
+
+
   std::cout << "Starting ray tracer: "<< "width: " << nx << ", height: " << ny << ", samples: " << ns << std::endl;
 
-//  Hitable **d_mesh = loadMeshFromOBJFile("../models/bunny.obj", 1000.f);
-  load_mesh_BVH("../models/bunny.obj", 1000.f);
+//  Hitable **d_mesh = loadMeshFromOBJFile("../models/plane.obj", 3.f);
+  BVH *d_bvh;
+  checkCudaErrors(cudaMalloc((void **)&d_bvh, sizeof(BVH)));
+  load_mesh_BVH("../models/cube.obj", d_bvh, 3.f);
 
   // load texture into gpu memory
   cudaTextureObject_t texObj = createImageTexture("../textures/earthmap1k.png");
@@ -596,11 +661,11 @@ int main() {
   checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(Camera *)));
 
 
-
-  create_cornell_box_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N);
+//  create_mesh_and_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera, nx, ny, object_N, d_mesh);
+//  create_cornell_box_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N);
 //  create_spheres_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
 //  create_mesh_scene<<<1, 1>>>(d_mesh, d_world, d_camera, nx, ny, object_N);
-//  create_mesh_and_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera, nx, ny, object_N, d_mesh);
+  create_BVH_scene<<<1, 1>>>(d_bvh, d_world, d_camera, nx, ny, object_N);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
@@ -636,7 +701,7 @@ int main() {
 
   checkCudaErrors(cudaDeviceSynchronize());
 
-  free_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera);
+//  free_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera);
 //  free_spheres_scene<<<1, 1>>>(d_list, d_world, d_camera);
 
   checkCudaErrors(cudaGetLastError());

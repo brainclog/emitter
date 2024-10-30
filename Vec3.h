@@ -41,13 +41,13 @@ public:
   __host__ __device__ inline Vec3& operator-=(const Vec3 &v2);
   __host__ __device__ inline Vec3& operator*=(const Vec3 &v2);
   __host__ __device__ inline Vec3& operator/=(const Vec3 &v2);
-  __host__ __device__ inline Vec3& operator*=(const float t);
-  __host__ __device__ inline Vec3& operator/=(const float t);
+  __host__ __device__ inline Vec3& operator*=(float t);
+  __host__ __device__ inline Vec3& operator/=(float t);
 
-  __host__ __device__ inline float length() const { return sqrt(e[0]*e[0] + e[1]*e[1] + e[2]*e[2]); }
-  __host__ __device__ inline float length_squared() const { return e[0]*e[0] + e[1]*e[1] + e[2]*e[2]; }
-  __host__ __device__ inline void make_unit_vector();
-//  __host__ __device__ inline Vec3 unit_vector(Vec3 v);
+  __host__ __device__ float inline length() const { return sqrt(e[0]*e[0] + e[1]*e[1] + e[2]*e[2]); }
+  __host__ __device__ float inline length_squared() const { return e[0]*e[0] + e[1]*e[1] + e[2]*e[2]; }
+  __host__ __device__ void inline make_unit_vector();
+//  __host__ __device__ Vec3 unit_vector(Vec3 v);
 ;
 
   float e[3];
@@ -157,7 +157,7 @@ __host__ __device__ inline Vec3 unit_vector(Vec3 v) {
   return v / v.length();
 }
 
-//__host__ __device__ inline Vec3 randomUnitVector(){
+//__host__ __device__ Vec3 randomUnitVector(){
 //  Vec3 p;
 //  do {
 //    p = 2.0 * Vec3(drand48(), drand48(), drand48()) - Vec3(1,1,1);
@@ -165,7 +165,7 @@ __host__ __device__ inline Vec3 unit_vector(Vec3 v) {
 //  return p;
 //}
 
-//__host__ __device__ inline Vec3 reflect(const Vec3& v, const Vec3& n) {
+//__host__ __device__ Vec3 reflect(const Vec3& v, const Vec3& n) {
 //  return v - 2*dot(v,n)*n;
 //}
 

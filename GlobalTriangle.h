@@ -4,16 +4,16 @@
 
 class GlobalAABB { // helper for global triangle
 public:
-  GlobalAABB() {}
-  GlobalAABB(const Vec3& a, const Vec3& b) { _min = a; _max = b; }
+  __host__ __device__ GlobalAABB() {}
+  __host__ __device__ GlobalAABB(const Vec3& a, const Vec3& b) { _min = a; _max = b; }
 
-  Vec3 min() const { return _min; }
-  Vec3 max() const { return _max; }
+  __host__ __device__ Vec3 min() const { return _min; }
+  __host__ __device__ Vec3 max() const { return _max; }
 
   Vec3 _min;
   Vec3 _max;
 
-  Vec3 centroid() const {
+  __host__ __device__ Vec3 centroid() const {
     return (_min + _max) / 2;
   }
 

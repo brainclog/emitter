@@ -48,7 +48,7 @@ public:
     return x;
   }
   __device__ int longest_axis() const {
-    // Returns the index of the longest axis of the bounding box.
+    // Returns the nodesArrayIndex of the longest axis of the bounding box.
 
     if (x.size() > y.size())
       return x.size() > z.size() ? 0 : 2;
@@ -83,14 +83,14 @@ public:
 
 
 
-__device__ inline bool AABB::hit(const Ray& r, float tmin, float tmax) const{
+__device__ bool AABB::hit(const Ray& r, float tmin, float tmax) const{
   Interval ray_t(tmin, tmax);
   const Vec3& ray_orig = r.origin();
   const Vec3&   ray_dir  = r.direction();
 
   for (int axis = 0; axis < 3; axis++) {
     const Interval& ax = axis_interval(axis);
-    const double adinv = 1.0 / ray_dir[axis];
+    const float adinv = 1.0f / ray_dir[axis];
 
     auto t0 = (ax.min - ray_orig[axis]) * adinv;
     auto t1 = (ax.max - ray_orig[axis]) * adinv;

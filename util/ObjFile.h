@@ -48,9 +48,9 @@ public:
         Vec3 face;
         ss >> face[0] >> face[1] >> face[2];
 
-        face = face - Vec3(1,1,1); // specification is NOT zero indexed, subtract 1 from each index
+        face = face - Vec3(1,1,1); // specification is NOT zero indexed, subtract 1 from each nodesArrayIndex
         // print out face
-//         std::cout << "Reading face index " << faces.size() << " : " << face[0] << " " << face[1] << " " << face[2] << std::endl;
+//         std::cout << "Reading face nodesArrayIndex " << faces.size() << " : " << face[0] << " " << face[1] << " " << face[2] << std::endl;
         faces.push_back(face);
 
       }
