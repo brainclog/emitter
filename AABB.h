@@ -69,6 +69,8 @@ public:
     x.expand(delta);
     y.expand(delta);
     z.expand(delta);
+    _min = Vec3(x.min, y.min, z.min);
+    _max = Vec3(x.max, y.max, z.max);
   }
 
   __device__ static AABB empty() {

@@ -245,7 +245,7 @@ public:
   BVH_Node* parent;
 
   AABB bbox;
-  int nodesArrayIndex;
+//  int nodesArrayIndex;
 
 };
 
@@ -275,8 +275,8 @@ __device__ void generateHierarchy( unsigned int* sortedMortonCodes,
   for (int idx = 0; idx < numObjects; idx++) {
     leafNodes[idx].obj = &(triArray[idx]);
     leafNodes[idx].bbox = triArray[idx].bbox;
-    triArray[idx].triArrayIndex = idx;
-    leafNodes[idx].nodesArrayIndex = idx;
+//    triArray[idx].nodesArrayIndex = idx;
+//    leafNodes[idx].nodesArrayIndex = idx;
 //
 //    printf("Triangle %d, obj: %p\n", idx, leafNodes[idx].obj);
 //    // display vertices of the triangle
@@ -345,9 +345,9 @@ __device__ void generateHierarchy( unsigned int* sortedMortonCodes,
 
   // Node 0 is the root.
 
-  for (int i = 0; i < numObjects - 1; i++) {
-    internalNodes[i].nodesArrayIndex = i;
-  }
+//  for (int i = 0; i < numObjects - 1; i++) {
+//    internalNodes[i].nodesArrayIndex = i;
+//  }
 
   bvh->root = &internalNodes[0];
   bvh->leafNodes = leafNodes;
@@ -425,25 +425,27 @@ __device__ bool BVH_Node::hit(const Ray &r, float t_min, float t_max, HitRecord 
 
 
 //    printf("---\nChecking BVH node with nodesArrayIndex %d, is leaf: %d\n", node->nodesArrayIndex, node->obj != nullptr);
-    int triIndex = -1;
-    if (node->obj != nullptr) triIndex = node->obj->triArrayIndex;
+//    int triIndex = -1;
+//    if (node->obj != nullptr) triIndex = node->obj->nodesArrayIndex;
 
 
 
+//    if(true) {
     if(node->bbox.hit(r, t_min, t_max)) {
+
+      //    if(true) {
 //      printf(" bbox hit\n");
-
-
       // leaf node
       if(node-> obj != nullptr) {
 //        printf("Leaf node, testing collision with triangle, triangle has nodesArrayIndex %d\n", node->obj->triArrayIndex);
 
 
-        return node->obj->hit(r, t_min, t_max, rec);
-//        if (hit) {
+//        return node->obj->hit(r, t_min, t_max, rec);
+        bool hit = node->obj->hit(r, t_min, t_max, rec);
+        if (hit) {
 //          printf("Hit inside BVH node ");
-//          return true;
-//        }
+          return true;
+        }
 
       } else { // internal node, add children to stack
 //        printf("Adding children to stack: nodes with indices %d, %d\n", node->childA->nodesArrayIndex, node->childB->nodesArrayIndex);

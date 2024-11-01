@@ -524,7 +524,7 @@ __global__ void free_BVH_scene(Hitable **mesh, Hitable **d_world, Camera **d_cam
   delete *d_camera;
 }
 
-__global__ void create_mesh_and_cornell_box_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N, Hitable** d_mesh) {
+__global__ void create_mesh_and_cornell_box_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N, BVH* d_bvh) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     Material *red = new lambertian(new ConstantTexture(Vec3(0.65, 0.05, 0.05)));
     Material *white = new lambertian(new ConstantTexture(Vec3(0.73, 0.73, 0.73)));
@@ -539,7 +539,7 @@ __global__ void create_mesh_and_cornell_box_scene(Hitable **d_list, Hitable **d_
     *(d_list+4) = new XZ_Rectangle(0, 555, 0, 555, 0, white);
     *(d_list+5) = new flip_normals( new XY_Rectangle(0, 555, 0, 555, 555, white));
 
-    *(d_list+6) = *d_mesh;
+//    *(d_list+6) = d_bvh->root;
 
 
 
@@ -645,10 +645,10 @@ int main() {
 
   std::cout << "Starting ray tracer: "<< "width: " << nx << ", height: " << ny << ", samples: " << ns << std::endl;
 
-//  Hitable **d_mesh = loadMeshFromOBJFile("../models/plane.obj", 3.f);
+//  Hitable **d_mesh = loadMeshFromOBJFile("../models/bunny.obj", 50.5f);
   BVH *d_bvh;
   checkCudaErrors(cudaMalloc((void **)&d_bvh, sizeof(BVH)));
-  load_mesh_BVH("../models/cube.obj", d_bvh, 3.f);
+  load_mesh_BVH("../models/bunny.obj", d_bvh, 100.f);
 
   // load texture into gpu memory
   cudaTextureObject_t texObj = createImageTexture("../textures/earthmap1k.png");
@@ -661,7 +661,7 @@ int main() {
   checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(Camera *)));
 
 
-//  create_mesh_and_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera, nx, ny, object_N, d_mesh);
+//  create_mesh_and_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera, nx, ny, object_N, d_bvh);
 //  create_cornell_box_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N);
 //  create_spheres_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
 //  create_mesh_scene<<<1, 1>>>(d_mesh, d_world, d_camera, nx, ny, object_N);

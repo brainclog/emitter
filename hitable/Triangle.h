@@ -23,7 +23,13 @@ public:
     float maxY = max(vertices[0][1], max(vertices[1][1], vertices[2][1]));
     float maxZ = max(vertices[0][2], max(vertices[1][2], vertices[2][2]));
 
-    bbox = AABB(Vec3(minX, minY, minZ), Vec3(maxX, maxY, maxZ));
+    float epsilon = 1e-5f;  // Adjust this value based on your scene scale
+    Vec3 padding = Vec3(epsilon, epsilon, epsilon);
+    bbox = AABB(Vec3(minX, minY, minZ) - padding,
+                Vec3(maxX, maxY, maxZ) + padding);
+
+//    bbox = AABB(Vec3(minX, minY, minZ), Vec3(maxX, maxY, maxZ));
+//    bbox.expand(.01f);
 
 //    printf("Newly created triangle has bbox with min: %f %f %f and max: %f %f %f\n", bbox._min.x(), bbox._min.y(), bbox._min.z(), bbox._max.x(), bbox._max.y(), bbox._max.z());
 
@@ -40,11 +46,11 @@ public:
   Material *mat;
 
   AABB bbox;
-  int triArrayIndex;
+//  int nodesArrayIndex;
 };
 
 __device__ bool Triangle::hit(const Ray& r, float t_min, float t_max, HitRecord& rec) const {
-  printf("Testing collision with triangle ArrayIndex %d\n", triArrayIndex);
+//  printf("Testing collision with triangle at node index %d\n", nodesArrayIndex);
 
   Vec3 e1 = vertices[1] - vertices[0];
   Vec3 e2 = vertices[2] - vertices[0];
@@ -66,7 +72,7 @@ __device__ bool Triangle::hit(const Ray& r, float t_min, float t_max, HitRecord&
   float t_hit = dot(e2, q) * inv_det;
   if (t_hit < t_min || t_hit > t_max) return false;
 
-  printf("Collision with triangle nodesArrayIndex %d\n", triArrayIndex);
+//  printf("Collision HAPPENED with triangle at node index %d\n", nodesArrayIndex);
 
   rec.t = t_hit;
   rec.p = r.point_at_parameter(t_hit);
