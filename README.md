@@ -15,14 +15,17 @@ The BVH acceleration structure is constructed in parallel on the gpu as a binary
 - OBJ file support for mesh loading
 - Naive sphere image texture mapping
 - Materials: lambertian, metal (with roughness), glass
+- Depth of field 
+- Jitter-based anti-aliasing
 
 ## Sample Renders
 
 Simple Cornell Box Render (1000x1000, 3000 samples):
-![](pictures/cornellbox_1k_1k_3000s.png)
+
+![a](pictures/cornellbox_1k_1k_3000s.png)
 
 Stanford Bunny inside Cornell Box (1000x1000, 3000 samples):
 
-![](pictures/bunnycornell_1k_1k_3000s.png)
+![a](pictures/bunnycornell_1k_1k_3000s.png)
 
 
