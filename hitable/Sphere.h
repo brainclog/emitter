@@ -2,7 +2,7 @@
 #include <memory>
 #include <utility>
 #include "Hitable.h"
-#include "Texture.h"
+#include "core/Texture.h"
 
 class Material;
 

@@ -5,7 +5,7 @@
 #include <sstream>
 #include <iostream>
 #include <fstream>
-#include "Vec3.h"
+#include "core/Vec3.h"
 
 class ObjFile {
 public:

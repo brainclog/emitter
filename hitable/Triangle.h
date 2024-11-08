@@ -1,7 +1,7 @@
 #pragma once
 
 #include "hitable/Hitable.h"
-#include "GlobalTriangle.h"
+#include "util/GlobalTriangle.h"
 
 // code for Triangle primitive with Möller–Trumbore algorithm for ray-triangle intersection
 
@@ -23,7 +23,8 @@ public:
     float maxY = max(vertices[0][1], max(vertices[1][1], vertices[2][1]));
     float maxZ = max(vertices[0][2], max(vertices[1][2], vertices[2][2]));
 
-    float epsilon = 1e-5f;  // Adjust this value based on your scene scale
+    float epsilon = 0.f;
+//    float epsilon = 1e-5f;
     Vec3 padding = Vec3(epsilon, epsilon, epsilon);
     bbox = AABB(Vec3(minX, minY, minZ) - padding,
                 Vec3(maxX, maxY, maxZ) + padding);

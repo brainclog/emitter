@@ -1,5 +1,5 @@
 #include "hitable/Hitable.h"
-#include "Texture.h"
+#include "core/Texture.h"
 
 __device__ Vec3 randomUnitVector(curandState *local_rand_state){
   Vec3 p;
@@ -28,7 +28,7 @@ public:
   __device__ bool scatter(const Ray& r_in, const HitRecord& rec, Vec3& attenuation, Ray& scattered, curandState *local_rand_state)
   const override {
     Vec3 target = rec.p + rec.normal + randomUnitVector(local_rand_state);
-    scattered = Ray(rec.p, target-rec.p, r_in.time());
+    scattered = Ray(rec.p, target-rec.p);
     attenuation = albedo->value(rec.u, rec.v, rec.p);
     return true;
   }
@@ -45,7 +45,7 @@ public:
   __device__ bool scatter(const Ray& r_in, const HitRecord& rec, Vec3& attenuation, Ray& scattered, curandState *local_rand_state)
   const override {
     Vec3 reflected = reflect(unit_vector(r_in.direction()), rec.normal);
-    scattered = Ray(rec.p, reflected + fuzz*randomUnitVector(local_rand_state), r_in.time());
+    scattered = Ray(rec.p, reflected + fuzz*randomUnitVector(local_rand_state));
     attenuation = albedo->value(0,0,rec.p);
     return (dot(scattered.direction(), rec.normal) > 0.0f);
   }
@@ -100,14 +100,14 @@ public:
       reflect_prob = schlick(cosine, ref_idx);
     }
     else {
-      scattered = Ray(rec.p, reflected, r_in.time());
+      scattered = Ray(rec.p, reflected);
       reflect_prob = 1.0f;
     }
     if(curand_uniform(local_rand_state) < reflect_prob){
-      scattered = Ray(rec.p, reflected, r_in.time());
+      scattered = Ray(rec.p, reflected);
     }
     else {
-      scattered = Ray(rec.p, refracted, r_in.time());
+      scattered = Ray(rec.p, refracted);
     }
     return true;
   }

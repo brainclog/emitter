@@ -245,7 +245,7 @@ public:
   BVH_Node* parent;
 
   AABB bbox;
-//  int nodesArrayIndex;
+  int nodesArrayIndex;
 
 };
 
@@ -276,7 +276,7 @@ __device__ void generateHierarchy( unsigned int* sortedMortonCodes,
     leafNodes[idx].obj = &(triArray[idx]);
     leafNodes[idx].bbox = triArray[idx].bbox;
 //    triArray[idx].nodesArrayIndex = idx;
-//    leafNodes[idx].nodesArrayIndex = idx;
+    leafNodes[idx].nodesArrayIndex = idx;
 //
 //    printf("Triangle %d, obj: %p\n", idx, leafNodes[idx].obj);
 //    // display vertices of the triangle
@@ -345,13 +345,15 @@ __device__ void generateHierarchy( unsigned int* sortedMortonCodes,
 
   // Node 0 is the root.
 
-//  for (int i = 0; i < numObjects - 1; i++) {
-//    internalNodes[i].nodesArrayIndex = i;
-//  }
+  for (int i = 0; i < numObjects - 1; i++) {
+    internalNodes[i].nodesArrayIndex = i;
+  }
 
   bvh->root = &internalNodes[0];
   bvh->leafNodes = leafNodes;
   bvh->numObjects = numObjects;
+
+
 }
 
 // build aabbs __global__ function
@@ -365,20 +367,29 @@ __device__ void generateHierarchy( unsigned int* sortedMortonCodes,
 __global__ void bbox_init_kernel(BVH *bvh,Triangle *d_triangles ) {
   BVH_Node *leafNodes = bvh->leafNodes;
   int numObjects = bvh->numObjects;
+  // print numObjects
+//  printf("numObjects: %d\n", numObjects);
 
 //  for (int i = 0; i < numObjects; i++) {
 //    // print out bbox  vertices for each triangle
 //    printf("bbox intervals are: x(%f, %f), y(%f, %f), z(%f, %f)\n", d_triangles[i].bbox.x.min, d_triangles[i].bbox.x.max,
 //           leafNodes[i].bbox.y.min, leafNodes[i].bbox.y.max, d_triangles[i].bbox.z.min, d_triangles[i].bbox.z.max);
 //  }
-
+//  for (int i = blockIdx.x * blockDim.x + threadIdx.x;
+//       i < n;
+//       i += blockDim.x * gridDim.x)
+//  {
+//    y[i] = a * x[i] + y[i];
+//  }
 
   // Calculate global thread nodesArrayIndex with stride
   for (int tid = blockIdx.x * blockDim.x + threadIdx.x;
        tid < numObjects;
        tid += blockDim.x * gridDim.x) {
+    // print block idx, block dim, thread idx and grid dim and tid
+//    printf("blockIdx.x: %d, blockDim.x: %d, threadIdx.x: %d, gridDim.x: %d, tid: %d\n", blockIdx.x, blockDim.x, threadIdx.x, gridDim.x, tid);
+
     //print tid
-//    printf("tid: %d\n", tid);
 
     // Start from leaf node
     BVH_Node* currentNode = &leafNodes[tid];
@@ -395,6 +406,8 @@ __global__ void bbox_init_kernel(BVH *bvh,Triangle *d_triangles ) {
 
     // Walk up the tree
     while (currentNode->parent != nullptr) {
+//      printf("tid: %d, currentNode->nodesArrayIndex: %d\n", tid, currentNode->nodesArrayIndex);
+
       BVH_Node* parent = currentNode->parent;
 
       // Atomically increment the processed count
@@ -402,14 +415,18 @@ __global__ void bbox_init_kernel(BVH *bvh,Triangle *d_triangles ) {
 
       if (wasProcessed == 0) {
         // First thread to reach this node - terminate
-        return;
+        break;
       }
+//      printf("tid: %d, currentNode->nodesArrayIndex: %d, parent->nodesArrayIndex: %d\n", tid, currentNode->nodesArrayIndex, parent->nodesArrayIndex);
+
+
 
       // Second thread to reach this node - compute bbox and continue up
       currentNode->parent->bbox = AABB(currentNode->parent->childA->bbox, currentNode->parent->childB->bbox);
       currentNode = parent;
     }
   }
+
 }
 
 
@@ -431,7 +448,7 @@ __device__ bool BVH_Node::hit(const Ray &r, float t_min, float t_max, HitRecord 
 
 
 //    if(true) {
-    if(node->bbox.hit(r, t_min, t_max)) {
+    if(node->get_bbox()->hit(r, t_min, t_max)) {
 
       //    if(true) {
 //      printf(" bbox hit\n");
@@ -456,5 +473,7 @@ __device__ bool BVH_Node::hit(const Ray &r, float t_min, float t_max, HitRecord 
 
   }
   // no hit
+//  printf(" bbox not hit\n");
+
   return false;
 }

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <memory>
-#include "Ray.h"
-#include "AABB.h"
+#include "core/Ray.h"
+#include "core/AABB.h"
 //#include "Material.h"
 
 class Material;
@@ -58,7 +58,7 @@ public:
 };
 
 __device__ bool translate::hit(const Ray &r, float t_min, float t_max, HitRecord &rec) const {
-  Ray moved_r(r.origin() - offset, r.direction(), r.time());
+  Ray moved_r(r.origin() - offset, r.direction());
   if (ptr->hit(moved_r, t_min, t_max, rec)) {
     rec.p += offset;
     return true;
@@ -117,7 +117,7 @@ __device__ bool rotate_y::hit(const Ray &r, float t_min, float t_max, HitRecord 
   origin[2] = sin_theta*r.origin()[0] + cos_theta*r.origin()[2];
   direction[0] = cos_theta*r.direction()[0] - sin_theta*r.direction()[2];
   direction[2] = sin_theta*r.direction()[0] + cos_theta*r.direction()[2];
-  Ray rotated_r(origin, direction, r.time());
+  Ray rotated_r(origin, direction);
   if (ptr->hit(rotated_r, t_min, t_max, rec)) {
     Vec3 p = rec.p;
     Vec3 normal = rec.normal;

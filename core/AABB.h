@@ -48,7 +48,6 @@ public:
     return x;
   }
   __device__ int longest_axis() const {
-    // Returns the nodesArrayIndex of the longest axis of the bounding box.
 
     if (x.size() > y.size())
       return x.size() > z.size() ? 0 : 2;
@@ -57,7 +56,6 @@ public:
   }
 
   __device__ Vec3 centroid() {
-    // Returns the centroid of the bounding box, checks for nans
     Vec3 center{(x.min + x.max) / 2, (y.min + y.max) / 2, (z.min + z.max) / 2};
     if(isfinite(center[0]) || isfinite(center[1]) || isfinite(center[2])){
       return {0,0,0};

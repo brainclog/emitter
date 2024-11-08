@@ -8,25 +8,22 @@
 #include "cuda_runtime.h"
 #include <bitset>
 
-#include "Vec3.h"
-#include "Ray.h"
+#include "core/Vec3.h"
+#include "core/Ray.h"
 #include "hitable/Hitable.h"
 #include "hitable/Sphere.h"
 #include "hitable/HitableList.h"
 #include "util/Image.h"
-#include "Camera.h"
+#include "core/Camera.h"
 #include "Material.h"
-#include "Texture.h"
-#include "ConfigParser.h"
+#include "core/Texture.h"
+#include "util/ConfigParser.h"
 #include "hitable/AA_Rectangles.h"
-#include "Box.h"
+#include "hitable/Box.h"
 #include "hitable/Triangle.h"
 #include "hitable/Mesh.h"
 #include "util/ObjFile.h"
-#include "BVH.h"
-#include <filesystem>
-#include <fstream>
-#include "util/Interval.h"
+#include "hitable/BVH.h"
 
 
 
@@ -36,7 +33,7 @@ __device__ Vec3 color(const Ray& r, Hitable **world, curandState *local_rand_sta
   Vec3 cur_attenuation = {1.0,1.0,1.0};
   Vec3 result = {0,0,0};
 
-  for(int i = 0; i < 50; i++) {
+  for(int i = 0; i < 20; i++) {
     HitRecord rec;
 
     // does the ray hit anything?
@@ -58,13 +55,9 @@ __device__ Vec3 color(const Ray& r, Hitable **world, curandState *local_rand_sta
       }
     }
     else {
-      // the ray did not his anything, return background color times current attenuation..!
-      Vec3 unit_direction = unit_vector(cur_ray.direction());
-      float t = 0.5f*(unit_direction.y() + 1.0f);
-      Vec3 background = (1.0f-t)*Vec3(0.5, 0.5, 0.75) + t*Vec3(0.3, 0.5, 0.7);
+      // the ray did not hit anything, return background color times current attenuation
 
-//      Vec3 background = Vec3(0.0, 0.0, 0.0);
-      result += cur_attenuation * background; // maybe * instead? or just =
+//      result += cur_attenuation * Vec3(0.5f,0.5f,0.75f); // uncomment for sky color
       break;
     }
   }
@@ -92,6 +85,7 @@ __global__ void render(Vec3 *fb, int max_x, int max_y, int ns,
     float v = float(j + curand_uniform(&local_rand_state)) / float(max_y);
     Ray r = (*cam)->getRay(u, v, &local_rand_state);
     px_color += color(r, world, &local_rand_state);
+    // printf sample
   }
   rand_state[pixel_index] = local_rand_state;
   px_color /= float(ns);
@@ -101,21 +95,6 @@ __global__ void render(Vec3 *fb, int max_x, int max_y, int ns,
   fb[pixel_index] = px_color;
 }
 
-//__global__ void make_camera(const int nx, const int ny, Camera **d_camera,
-//                            const Vec3& lookfrom, const Vec3& lookat, const Vec3& vup,
-//                            const float vfov, const float aperture, const float focus_dist){
-////  Vec3 lookfrom(3,3,2);
-////  Vec3 lookat(0,0,-1);
-////  float focus_dist = (lookfrom-lookat).length();
-////  float aperture = 0.3;
-//  *d_camera   = new Camera(lookfrom,
-//                           lookat,
-//                           Vec3(0,1,0),
-//                           vfov,
-//                           float(nx)/float(ny),
-//                           aperture,
-//                           focus_dist, 0.0f, 1.0f);
-//}
 
 __global__ void create_spheres_scene(Hitable **d_list, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N, cudaTextureObject_t textureObject) {
 
@@ -176,8 +155,6 @@ __global__ void create_cornell_box_scene(Hitable **d_list, Hitable **d_world, Ca
     *(d_list+3) = new flip_normals( new XZ_Rectangle(0, 555, 0, 555, 555, white));
     *(d_list+4) = new XZ_Rectangle(0, 555, 0, 555, 0, white);
     *(d_list+5) = new flip_normals( new XY_Rectangle(0, 555, 0, 555, 555, white));
-
-
 
     *(d_list+6) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 165, 165), new dielectric(1.5)), -18), Vec3(130, 0, 65));
     *(d_list+7) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 330, 165), shiny), 15), Vec3(265, 0, 295));
@@ -297,7 +274,9 @@ __host__ void sortByMortonCode(std::vector<GlobalTriangle>& triangles, std::vect
 
 __global__ void convertToDeviceTriangleArray(Triangle *d_triangles, GlobalTriangle *d_global_triangles, size_t nFaces) {
   Material *mat = new lambertian(new ConstantTexture(Vec3(0.8, 0.2, 0.3)));
-  for (int i = 0; i < nFaces; i++) { //TODO : parallelize loop with block thread nodesArrayIndex and stride
+//  Material *mat = new metal(new ConstantTexture(Vec3(1,1,1)), 0.03f);
+//  Material *mat = new dielectric(1.5f);
+  for (int i = 0; i < nFaces; i++) { //TODO : parallelize loop
     Vec3 p0 = d_global_triangles[i].vertices[0]; // get the points from the array
     Vec3 p1 = d_global_triangles[i].vertices[1];
     Vec3 p2 = d_global_triangles[i].vertices[2];
@@ -310,27 +289,8 @@ __global__ void convertToDeviceTriangleArray(Triangle *d_triangles, GlobalTriang
 // three components: morton codes array, triangles array, # triangles
 
 __global__ void buildBVH(Triangle *d_triangles, unsigned int* d_mortonCodes, size_t nFaces, BVH *d_bvh) {
-  //  __device__ Node* generateHierarchy( unsigned int* sortedMortonCodes,
-//  __device__ Node* generateHierarchy( unsigned int* sortedMortonCodes,
-//                                      int*          sortedObjectIDs,
-//                                      int           numObjects)
-//  {
-
   // pointer to d_bvh is already allocated, use placement new to put it there
-
-
   generateHierarchy(d_mortonCodes, d_triangles, (int)nFaces, d_bvh);
-
-  //loop through triangles and print all bbox min ma for each triangle
-//
-//  for(int i = 0; i < nFaces; i++) {
-//    printf("Triangle AFTER GENERATE HIERARCHY %d: min: %f %f %f, max: %f %f %f\n", i, d_triangles[i].bbox.min().x(), d_triangles[i].bbox.min().y(), d_triangles[i].bbox.min().z(), d_triangles[i].bbox.max().x(), d_triangles[i].bbox.max().y(), d_triangles[i].bbox.max().z());
-//  }
-
-
-
-
-
 }
 
 //goal
@@ -401,7 +361,7 @@ __host__ void load_mesh_BVH(const std::string &filename, BVH* d_bvh, float scale
   checkCudaErrors(cudaMemcpy(d_global_triangles, triangles.data(), nFaces * sizeof(GlobalTriangle), cudaMemcpyHostToDevice));
 
   checkCudaErrors(cudaGetLastError());
-//  checkCudaErrors(cudaDeviceSynchronize());
+
   //malloc contiguous memory for Triangle array, not array of pointers
 
   Triangle *d_triangles;
@@ -420,57 +380,12 @@ __host__ void load_mesh_BVH(const std::string &filename, BVH* d_bvh, float scale
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
-//  exit(10);
 
-  bbox_init_kernel<<<32,32>>>(d_bvh, d_triangles);
+  bbox_init_kernel<<<64, 64>>>(d_bvh, d_triangles);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
-//  exit(3);
-
-
-
-
-
-
-  //
-
-
-
-
-
-
-
-
-//
-//  //  allocate memory for vertices on device
-//  Vec3 *d_points;
-//  checkCudaErrors(cudaMalloc((void **)&d_points, pointsArraySize));
-//  checkCudaErrors(cudaMemcpy(d_points, objFile.points.data(), pointsArraySize, cudaMemcpyHostToDevice));
-//
-//  //  allocate memory for faces on device
-//  Vec3 *d_faces;
-//  checkCudaErrors(cudaMalloc((void **)&d_faces, facesArraySize));
-//  checkCudaErrors(cudaMemcpy(d_faces, objFile.faces.data(), facesArraySize, cudaMemcpyHostToDevice));
-//
-//
-//  // allocate memory for Hitable list for the triangles of the loaded mesh
-//  Hitable **d_MeshTriangles;
-//  checkCudaErrors(cudaMalloc((void **)&d_MeshTriangles, nFaces * sizeof(Hitable *)));
-//
-//  Hitable **d_mesh;
-//  checkCudaErrors(cudaMalloc((void **)&d_mesh, sizeof(Hitable *)));
-//  // all the prep for the mehs is done, now create the mesh on device from the loaded data
-//  meshFromTriangleArray<<<1, 1>>>(d_mesh, d_MeshTriangles, d_points, nPoints, d_faces, nFaces);
-//  checkCudaErrors(cudaGetLastError());
-//  checkCudaErrors(cudaDeviceSynchronize());
-
-  // free faces and points on device
-//  checkCudaErrors(cudaFree(d_faces));
-//  checkCudaErrors(cudaFree(d_points));
-
-//  return d_mesh;
 
 }
 
@@ -479,17 +394,16 @@ __host__ void load_mesh_BVH(const std::string &filename, BVH* d_bvh, float scale
 __global__ void create_mesh_scene(Hitable **mesh, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
     *d_world = *mesh;
-    Vec3 lookfrom(10,10,10);
-    Vec3 lookat(0,0,0);
-    float dist_to_focus = (lookfrom-lookat).length();
+    Vec3 lookfrom(278, 278, -800);
+    Vec3 lookat(278, 278, 0);
+    float dist_to_focus = 10.0;
     float aperture = 0.0;
-    *d_camera   = new Camera(lookfrom,
-                             lookat,
-                             Vec3(0,1,0),
-                             40.0,
-                             float(nx)/float(ny),
-                             aperture,
-                             dist_to_focus, 0.0f, 1.0f);
+    *d_camera = new Camera(lookfrom,
+                           lookat,
+                           Vec3(0, 1, 0), 40.0,
+                           float(nx) / float(ny),
+                           aperture,
+                           dist_to_focus, 0.0f, 1.0f);
   }
 
 }
@@ -502,18 +416,18 @@ __global__ void free_mesh_scene(Hitable **mesh, Hitable **d_world, Camera **d_ca
 
 __global__ void create_BVH_scene(BVH* d_bvh, Hitable **d_world, Camera **d_camera, int nx, int ny, int object_N) {
   if (threadIdx.x == 0 && blockIdx.x == 0) {
-    *d_world = d_bvh->root;
-    Vec3 lookfrom(10,10,10);
-    Vec3 lookat(0,0,0);
-    float dist_to_focus = (lookfrom-lookat).length();
+    *d_world = new translate( d_bvh->root,Vec3(365, -50, 295));
+
+    Vec3 lookfrom(278, 278, -800);
+    Vec3 lookat(278, 278, 0);
+    float dist_to_focus = 10.0;
     float aperture = 0.0;
-    *d_camera   = new Camera(lookfrom,
-                             lookat,
-                             Vec3(0,1,0),
-                             40.0,
-                             float(nx)/float(ny),
-                             aperture,
-                             dist_to_focus, 0.0f, 1.0f);
+    *d_camera = new Camera(lookfrom,
+                           lookat,
+                           Vec3(0, 1, 0), 40.0,
+                           float(nx) / float(ny),
+                           aperture,
+                           dist_to_focus, 0.0f, 1.0f);
   }
 
 }
@@ -530,7 +444,7 @@ __global__ void create_mesh_and_cornell_box_scene(Hitable **d_list, Hitable **d_
     Material *white = new lambertian(new ConstantTexture(Vec3(0.73, 0.73, 0.73)));
     Material *green = new lambertian(new ConstantTexture(Vec3(0.12, 0.45, 0.15)));
     Material *light = new DiffuseLight(new ConstantTexture(Vec3(15, 15, 15)));
-    Material *shiny = new metal(new ConstantTexture(Vec3(1.0, 1.0, 1.0)), 0.03f);
+    Material *shiny = new metal(new ConstantTexture(Vec3(1.0, 1.0, 1.0)), 0.10f);
 
     *(d_list) = new flip_normals(new YZ_Rectangle(0, 555, 0, 555, 555, green));
     *(d_list+1) = new YZ_Rectangle(0, 555, 0, 555, 0, red);
@@ -538,15 +452,29 @@ __global__ void create_mesh_and_cornell_box_scene(Hitable **d_list, Hitable **d_
     *(d_list+3) = new flip_normals( new XZ_Rectangle(0, 555, 0, 555, 555, white));
     *(d_list+4) = new XZ_Rectangle(0, 555, 0, 555, 0, white);
     *(d_list+5) = new flip_normals( new XY_Rectangle(0, 555, 0, 555, 555, white));
+//
+////    *(d_list+6) = d_bvh->root;
+    *(d_list+6) = new translate( d_bvh->root,Vec3(425, -30, 325));
+//    *(d_list+6) = new translate( d_bvh->root,Vec3(425, 300, 150)); // does not crack
+
+//    *(d_list) = new flip_normals(new YZ_Rectangle(0, 555, 0, 555, 555, green));
+//    *(d_list+1) = new YZ_Rectangle(0, 555, 0, 555, 0, red);
+//    *(d_list) = new XZ_Rectangle(213, 343, 227, 332, 554, light);
+//    *(d_list+2) = new flip_normals( new XZ_Rectangle(0, 555, 0, 555, 555, white));
+//    *(d_list+3) = new XZ_Rectangle(0, 555, 0, 555, 0, white);
+//    *(d_list+2) = new flip_normals( new XY_Rectangle(0, 555, 0, 555, 555, white));
 
 //    *(d_list+6) = d_bvh->root;
+//    *(d_list+1) = new translate( d_bvh->root,Vec3(365, -50, 200));
+// sphere at center
+
+    *(d_list+7) = new Sphere(Vec3(300, 75, 200), 50, new dielectric(1.5));
+//    *(d_list+7) = new Sphere(Vec3(300, 125, 100), 50, new dielectric(1.5));
 
 
-
-
-//    *(d_list+6) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 165, 165), new dielectric(1.5)), -18), Vec3(130, 0, 65));
-//    *(d_list+7) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 330, 165), shiny), 15), Vec3(265, 0, 295));
-
+    *(d_list+8) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 375, 165), shiny), -36), Vec3(130, 0, 300));
+//    *(d_list+8) = new translate( new rotate_y( new Box(Vec3(0, 0, 0), Vec3(165, 330, 165), shiny), 15), Vec3(265, 0, 295));
+//
 
 
     *d_world = new HitableList(d_list, object_N);
@@ -616,8 +544,6 @@ cudaTextureObject_t createImageTexture(const char *const filename){
 
 int main() {
 
-  // read config file
-
   ConfigParser config("../config.txt");
 
   const int nx = config.getInt("nx");
@@ -630,25 +556,24 @@ int main() {
 
   int num_pixels = nx*ny;
 
-  size_t newStackSize = 1024 + 512;
+  size_t newStackSize = 2048;
   cudaError_t err = cudaDeviceSetLimit(cudaLimitStackSize, newStackSize);
   if (err != cudaSuccess) {
     printf("Error setting stack size: %s\n", cudaGetErrorString(err));
   }
 
-
 //  size_t stack_size;
 //  cudaDeviceGetLimit(&stack_size, cudaLimitStackSize);
 //  std::cout << "Stack size: " << stack_size << std::endl;
-//  exit(123)
+//  exit(123);
 
 
   std::cout << "Starting ray tracer: "<< "width: " << nx << ", height: " << ny << ", samples: " << ns << std::endl;
 
-//  Hitable **d_mesh = loadMeshFromOBJFile("../models/bunny.obj", 50.5f);
+//  Hitable **d_mesh = loadMeshFromOBJFile("../models/cube.obj", 10.0f);
   BVH *d_bvh;
   checkCudaErrors(cudaMalloc((void **)&d_bvh, sizeof(BVH)));
-  load_mesh_BVH("../models/bunny.obj", d_bvh, 100.f);
+  load_mesh_BVH("../models/bunny.obj", d_bvh, 1250.f);
 
   // load texture into gpu memory
   cudaTextureObject_t texObj = createImageTexture("../textures/earthmap1k.png");
@@ -661,11 +586,11 @@ int main() {
   checkCudaErrors(cudaMalloc((void **)&d_camera, sizeof(Camera *)));
 
 
-//  create_mesh_and_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera, nx, ny, object_N, d_bvh);
+  create_mesh_and_cornell_box_scene<<<1, 1>>>(d_list, d_world, d_camera, nx, ny, object_N, d_bvh);
 //  create_cornell_box_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N);
 //  create_spheres_scene<<<1,1>>>(d_list,d_world, d_camera, nx, ny, object_N, texObj);
 //  create_mesh_scene<<<1, 1>>>(d_mesh, d_world, d_camera, nx, ny, object_N);
-  create_BVH_scene<<<1, 1>>>(d_bvh, d_world, d_camera, nx, ny, object_N);
+//  create_BVH_scene<<<1, 1>>>(d_bvh, d_world, d_camera, nx, ny, object_N);
 
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
@@ -678,13 +603,15 @@ int main() {
   dim3 blocks((nx + tx - 1) / tx, (ny + ty - 1) / ty);
   dim3 threads(tx,ty);
 
-  //initialize RNG
+  // initialize RNG
   render_init<<<blocks, threads>>>(nx, ny, d_rand_state, rSEED);
   checkCudaErrors(cudaGetLastError());
   checkCudaErrors(cudaDeviceSynchronize());
 
   // make image to write to
   Image image(nx, ny);
+
+  std::cout << "Starting render" << std::endl;
 
   auto start = std::chrono::high_resolution_clock::now();
   // main render function
